@@ -4,9 +4,11 @@ import { getProfile, getVisibleCoworkings, resolveCwFilter } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
 import { Table, THead, TBody, TR, TH, TD, EmptyState } from "@/components/ui/table";
-import { Badge, Dot } from "@/components/ui/badge";
-import { Plus, Search, ChevronLeft, ChevronRight } from "lucide-react";
-import { formatDate } from "@/lib/utils";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { Pagination } from "@/components/ui/pagination";
+import { Plus, Search } from "lucide-react";
+import { formatCurrency, formatDate, grossPrice } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
 
@@ -15,11 +17,18 @@ const PAGE_SIZE = 25;
 const STATUS_LABEL: Record<string, string> = {
   active: "Activo", overdue: "Impago", inactive: "Baja", pending: "Pendiente", casual: "Casual",
 };
-const STATUS_TONE: Record<string, "success" | "danger" | "neutral" | "warning"> = {
-  active: "success", overdue: "danger", inactive: "neutral", pending: "warning", casual: "neutral",
+const STATUS_TONE: Record<string, "success" | "danger" | "neutral" | "warning" | "gold"> = {
+  active: "success", overdue: "danger", inactive: "neutral", pending: "warning", casual: "gold",
 };
-const STATUS_DOT: Record<string, "success" | "danger" | "neutral" | "warning"> = {
-  active: "success", overdue: "danger", inactive: "neutral", pending: "warning", casual: "neutral",
+const STATUS_DOT: Record<string, "success" | "danger" | "neutral" | "warning" | "gold"> = {
+  active: "success", overdue: "danger", inactive: "neutral", pending: "warning", casual: "gold",
+};
+const dotBg: Record<string, string> = {
+  success: "bg-emerald-500",
+  danger: "bg-red-500",
+  warning: "bg-amber-500",
+  neutral: "bg-ink-400",
+  gold: "bg-brand-500",
 };
 
 export default async function ClientsPage({
@@ -53,6 +62,25 @@ export default async function ClientsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const cwMap = new Map(coworkings.map((c) => [c.id, c.name]));
 
+  // MRR + plan por cliente (subs activas) — añadido aquí por la nueva columna MRR sin tocar la vista
+  const ids = (rows ?? []).map((r: any) => r.id);
+  const mrrByClient = new Map<string, { mrr: number; plan: string | null; seats: number }>();
+  if (ids.length > 0) {
+    const { data: subs } = await supabase
+      .from("subscriptions")
+      .select("client_id, plan_name, final_price, vat_rate, tax_treatment, quantity")
+      .eq("status", "active")
+      .in("client_id", ids);
+    for (const s of subs ?? []) {
+      const cur = mrrByClient.get((s as any).client_id) ?? { mrr: 0, plan: null, seats: 0 };
+      const seats = Number((s as any).quantity) || 1;
+      cur.mrr += grossPrice((s as any).final_price, (s as any).tax_treatment, (s as any).vat_rate ?? 21) * seats;
+      if (!cur.plan) cur.plan = (s as any).plan_name;
+      cur.seats = Math.max(cur.seats, seats);
+      mrrByClient.set((s as any).client_id, cur);
+    }
+  }
+
   function pageHref(p: number) {
     const sp = new URLSearchParams();
     if (params.cw) sp.set("cw", params.cw);
@@ -64,39 +92,66 @@ export default async function ClientsPage({
     return qs ? `/clients?${qs}` : `/clients`;
   }
 
+  const hasFilters = !!(params.q || params.status || params.type);
+
   return (
     <div>
       <PageHeader
         title="Clientes"
-        subtitle={`${total} ${total === 1 ? "cliente" : "clientes"}${total > PAGE_SIZE ? ` · página ${page} de ${totalPages}` : ""}`}
+        subtitle={`${total} ${total === 1 ? "cliente" : "clientes"}${totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}`}
         actions={
           <Link href="/clients/new">
-            <Button><Plus className="h-4 w-4" /> Nuevo cliente</Button>
+            <Button size="sm" variant="primary">
+              <Plus className="h-3.5 w-3.5" /> Nuevo cliente
+            </Button>
           </Link>
         }
       />
 
-      <form className="mb-5 flex flex-wrap gap-2" action="/clients">
+      <form className="mb-3.5 flex flex-wrap items-center gap-2" action="/clients">
         {params.cw && <input type="hidden" name="cw" value={params.cw} />}
         <div className="relative flex-1 min-w-[260px] max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+          <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-500" />
           <input
             name="q"
             defaultValue={params.q ?? ""}
             placeholder="Buscar por nombre, empresa o email…"
-            className="h-10 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm placeholder:text-ink-400 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-ink-100"
+            className="h-8 w-full rounded-md border border-ink-200 bg-white pl-8 pr-2.5 text-[13px] text-ink-900 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
           />
         </div>
-        <select name="status" defaultValue={params.status ?? ""} className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm">
+        <select
+          name="status"
+          defaultValue={params.status ?? ""}
+          className="h-8 cursor-pointer appearance-none rounded-md border border-ink-200 bg-white pl-2.5 pr-8 text-[13px] text-ink-900 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100 bg-no-repeat bg-[length:14px_14px]"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2371717a'><path fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/></svg>\")",
+            backgroundPosition: "right 8px center",
+          }}
+        >
           <option value="">Todos los estados</option>
           {Object.entries(STATUS_LABEL).map(([k, v]) => (<option key={k} value={k}>{v}</option>))}
         </select>
-        <select name="type" defaultValue={params.type ?? ""} className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm">
+        <select
+          name="type"
+          defaultValue={params.type ?? ""}
+          className="h-8 cursor-pointer appearance-none rounded-md border border-ink-200 bg-white pl-2.5 pr-8 text-[13px] text-ink-900 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100 bg-no-repeat bg-[length:14px_14px]"
+          style={{
+            backgroundImage:
+              "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2371717a'><path fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/></svg>\")",
+            backgroundPosition: "right 8px center",
+          }}
+        >
           <option value="">Todos los tipos</option>
           <option value="individual">Individual</option>
           <option value="company">Empresa</option>
         </select>
-        <Button type="submit" variant="outline" size="md">Aplicar</Button>
+        <Button type="submit" variant="outline" size="sm">Aplicar</Button>
+        {hasFilters && (
+          <Link href="/clients" className="text-[12.5px] text-ink-500 hover:text-ink-900 underline">
+            Limpiar
+          </Link>
+        )}
       </form>
 
       {!rows || rows.length === 0 ? (
@@ -104,7 +159,7 @@ export default async function ClientsPage({
           title="Aún no hay clientes"
           action={
             <Link href="/clients/new">
-              <Button><Plus className="h-4 w-4" /> Crear el primero</Button>
+              <Button size="sm"><Plus className="h-3.5 w-3.5" /> Crear el primero</Button>
             </Link>
           }
         >
@@ -117,78 +172,79 @@ export default async function ClientsPage({
               <TR>
                 <TH>Cliente</TH>
                 <TH>Tipo</TH>
+                <TH>Plan</TH>
                 <TH>Coworking</TH>
                 <TH>Último pago</TH>
+                <TH className="text-right">MRR</TH>
                 <TH>Estado</TH>
                 <TH></TH>
               </TR>
             </THead>
             <TBody>
-              {rows.map((c: any) => (
-                <TR key={c.id}>
-                  <TD>
-                    <Link href={`/clients/${c.id}`} className="block">
-                      <p className="font-medium text-ink-900 hover:underline">{c.name}</p>
-                      {(c.company_name || c.email) && (
-                        <p className="text-[12px] text-ink-500">{c.company_name ?? c.email}</p>
+              {rows.map((c: any) => {
+                const status = c.derived_status as string;
+                const tone = STATUS_TONE[status] ?? "neutral";
+                const dot = STATUS_DOT[status] ?? "neutral";
+                const mrr = mrrByClient.get(c.id);
+                return (
+                  <TR key={c.id}>
+                    <TD>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={c.name} size="sm" />
+                        <div>
+                          <Link href={`/clients/${c.id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
+                            {c.name}
+                          </Link>
+                          {(c.company_name || c.email) && (
+                            <div className="text-[12px] text-ink-500">{c.company_name ?? c.email}</div>
+                          )}
+                        </div>
+                      </div>
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500">{c.client_type === "company" ? "Empresa" : "Individual"}</TD>
+                    <TD className="text-[12.5px]">
+                      {mrr?.plan ? (
+                        <span className="text-ink-800">
+                          {mrr.plan}
+                          {mrr.seats > 1 && <span className="text-ink-500"> × {mrr.seats}</span>}
+                        </span>
+                      ) : (
+                        <span className="text-ink-500">—</span>
                       )}
-                    </Link>
-                  </TD>
-                  <TD className="text-[13px]">{c.client_type === "company" ? "Empresa" : "Individual"}</TD>
-                  <TD className="text-[13px] text-ink-600">{cwMap.get(c.coworking_id) ?? "—"}</TD>
-                  <TD className="text-[12px] text-ink-600">{formatDate(c.last_paid_at)}</TD>
-                  <TD>
-                    <span className="inline-flex items-center gap-2">
-                      <Dot tone={STATUS_DOT[c.derived_status] ?? "neutral"} />
-                      <Badge tone={STATUS_TONE[c.derived_status] ?? "neutral"}>{STATUS_LABEL[c.derived_status] ?? c.derived_status}</Badge>
-                    </span>
-                  </TD>
-                  <TD className="text-right">
-                    <Link href={`/clients/${c.id}`} className="text-[13px] font-medium text-ink-700 hover:text-ink-900">
-                      Abrir →
-                    </Link>
-                  </TD>
-                </TR>
-              ))}
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500">{cwMap.get(c.coworking_id) ?? "—"}</TD>
+                    <TD className="text-[12.5px] text-ink-500">{formatDate(c.last_paid_at)}</TD>
+                    <TD className="text-right tabular text-[13px]">
+                      {mrr && mrr.mrr > 0 ? (
+                        <span className="font-medium text-ink-950">{formatCurrency(mrr.mrr)}</span>
+                      ) : (
+                        <span className="text-ink-500">—</span>
+                      )}
+                    </TD>
+                    <TD>
+                      <Badge tone={tone}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (dotBg[dot] ?? "bg-ink-400")} />
+                        {STATUS_LABEL[status] ?? status}
+                      </Badge>
+                    </TD>
+                    <TD className="text-right">
+                      <Link href={`/clients/${c.id}`} className="text-[12.5px] text-ink-500 hover:text-ink-900">
+                        Abrir →
+                      </Link>
+                    </TD>
+                  </TR>
+                );
+              })}
             </TBody>
           </Table>
 
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-[12px] text-ink-500">
-                Mostrando {from + 1}–{Math.min(to + 1, total)} de {total}
-              </p>
-              <div className="flex items-center gap-1">
-                {page > 1 ? (
-                  <Link
-                    href={pageHref(page - 1)}
-                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-200 bg-white px-3 text-[13px] hover:bg-ink-50"
-                  >
-                    <ChevronLeft className="h-3.5 w-3.5" /> Anterior
-                  </Link>
-                ) : (
-                  <span className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-3 text-[13px] text-ink-400">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Anterior
-                  </span>
-                )}
-                <span className="px-3 text-[13px] text-ink-700">
-                  Página {page} de {totalPages}
-                </span>
-                {page < totalPages ? (
-                  <Link
-                    href={pageHref(page + 1)}
-                    className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-200 bg-white px-3 text-[13px] hover:bg-ink-50"
-                  >
-                    Siguiente <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                ) : (
-                  <span className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-3 text-[13px] text-ink-400">
-                    Siguiente <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={total}
+            pageSize={PAGE_SIZE}
+            hrefFor={pageHref}
+          />
         </>
       )}
     </div>
