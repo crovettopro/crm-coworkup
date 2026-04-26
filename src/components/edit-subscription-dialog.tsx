@@ -20,6 +20,7 @@ export function EditSubscriptionButton({ subscription, isAdmin }: { subscription
 
   const [base, setBase] = useState(subscription.base_price);
   const [quantity, setQuantity] = useState(subscription.quantity ?? 1);
+  const [billingMonths, setBillingMonths] = useState<number>(subscription.billing_months ?? 1);
   const [discountType, setDiscountType] = useState<"" | "percent" | "fixed">((subscription.discount_type as any) ?? "");
   const [discountValue, setDiscountValue] = useState(subscription.discount_value ?? 0);
   const [vatRate, setVatRate] = useState(subscription.vat_rate ?? 21);
@@ -47,6 +48,7 @@ export function EditSubscriptionButton({ subscription, isAdmin }: { subscription
       plan_name: fd.get("plan_name"),
       base_price: Number(base),
       quantity: Math.max(1, quantity),
+      billing_months: Math.max(1, billingMonths),
       final_price: Number(finalNet.toFixed(2)),
       discount_type: discountType || null,
       discount_value: discountType ? Number(discountValue) : null,
@@ -89,11 +91,19 @@ export function EditSubscriptionButton({ subscription, isAdmin }: { subscription
             <form onSubmit={handleSubmit} className="px-6 py-4 space-y-3 text-left">
               <Field label="Nombre del plan"><Input name="plan_name" defaultValue={subscription.plan_name} required /></Field>
 
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-4 gap-3">
                 <Field label="Cantidad">
                   <Input type="number" min={1} step={1} value={quantity} onChange={(e) => setQuantity(Math.max(1, Number(e.target.value)))} required />
                 </Field>
-                <Field label="Precio unit. neto (€)">
+                <Field label="Periodicidad">
+                  <Select value={String(billingMonths)} onChange={(e) => setBillingMonths(Number(e.target.value))}>
+                    <option value="1">Mensual</option>
+                    <option value="3">Trimestral (3 meses)</option>
+                    <option value="6">Semestral (6 meses)</option>
+                    <option value="12">Anual (12 meses)</option>
+                  </Select>
+                </Field>
+                <Field label="Precio neto (€)">
                   <Input type="number" step="0.01" value={base} onChange={(e) => setBase(Number(e.target.value))} required />
                 </Field>
                 <Field label="IVA (%)">

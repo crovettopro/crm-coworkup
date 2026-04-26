@@ -115,6 +115,7 @@ export interface Subscription {
   auto_renew?: boolean | null;
   billing_day?: number | null;
   payment_method?: PaymentMethod | null;
+  billing_months?: number | null;
   notes?: string | null;
   created_at: string;
 }

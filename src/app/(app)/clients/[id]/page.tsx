@@ -92,9 +92,10 @@ export default async function ClientDetailPage({
     0,
   );
   const last12m = Number((revenueRow as any)?.total_12m ?? 0);
+  // MRR mensual: el final_price ya es el TOTAL del plan (no por asiento). Las trimestrales se dividen entre 3.
+  const months = Math.max(1, Number(activeSub?.billing_months) || 1);
   const currentMrr = activeSub
-    ? grossPrice(activeSub.final_price, activeSub.tax_treatment ?? treatment, activeSub.vat_rate ?? 21) *
-      (Number(activeSub.quantity) || 1)
+    ? grossPrice(activeSub.final_price, activeSub.tax_treatment ?? treatment, activeSub.vat_rate ?? 21) / months
     : 0;
 
   const tone = STATUS_TONE[status] ?? "neutral";

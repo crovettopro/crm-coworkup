@@ -10,7 +10,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Plus, Search } from "lucide-react";
 import { formatCurrency, formatDate, grossPrice } from "@/lib/utils";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 
 const PAGE_SIZE = 25;
 
@@ -62,19 +62,23 @@ export default async function ClientsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const cwMap = new Map(coworkings.map((c) => [c.id, c.name]));
 
-  // MRR + plan por cliente (subs activas) — añadido aquí por la nueva columna MRR sin tocar la vista
+  // MRR + plan por cliente (subs activas) — el `final_price` ya es el TOTAL mensual del plan,
+  // así que NO multiplicamos por seats. Para subs trimestrales (billing_months=3) dividimos
+  // entre 3 para obtener el equivalente mensual.
   const ids = (rows ?? []).map((r: any) => r.id);
   const mrrByClient = new Map<string, { mrr: number; plan: string | null; seats: number }>();
   if (ids.length > 0) {
     const { data: subs } = await supabase
       .from("subscriptions")
-      .select("client_id, plan_name, final_price, vat_rate, tax_treatment, quantity")
+      .select("client_id, plan_name, final_price, vat_rate, tax_treatment, quantity, billing_months")
       .eq("status", "active")
       .in("client_id", ids);
     for (const s of subs ?? []) {
       const cur = mrrByClient.get((s as any).client_id) ?? { mrr: 0, plan: null, seats: 0 };
       const seats = Number((s as any).quantity) || 1;
-      cur.mrr += grossPrice((s as any).final_price, (s as any).tax_treatment, (s as any).vat_rate ?? 21) * seats;
+      const months = Math.max(1, Number((s as any).billing_months) || 1);
+      const gross = grossPrice((s as any).final_price, (s as any).tax_treatment, (s as any).vat_rate ?? 21);
+      cur.mrr += gross / months;
       if (!cur.plan) cur.plan = (s as any).plan_name;
       cur.seats = Math.max(cur.seats, seats);
       mrrByClient.set((s as any).client_id, cur);

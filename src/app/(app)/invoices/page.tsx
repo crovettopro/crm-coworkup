@@ -13,7 +13,7 @@ import { InvoiceRowActions } from "./invoice-actions";
 import { formatCurrency, formatDate, monthRange, currentMonthString } from "@/lib/utils";
 import { Plus, Search, AlertTriangle } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 const PAGE_SIZE = 25;
 
 export default async function InvoicesPage({

@@ -23,3 +23,7 @@ import_data/*.sql
 
 # Claude/Anthropic local files
 .claude
+
+
+# Handoff (referencia interna, no para repo)
+handoff/

@@ -9,14 +9,16 @@ import { Table, THead, TBody, TR, TH, TD, EmptyState } from "@/components/ui/tab
 import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { KpiGrid, Kpi } from "@/components/ui/kpi";
+import { Pagination } from "@/components/ui/pagination";
 import { formatCurrency, formatDate, monthRange, currentMonthString } from "@/lib/utils";
 
 export const dynamic = "force-dynamic";
+const PAYMENTS_PAGE_SIZE = 10;
 
 export default async function CashPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cw?: string; month?: string }>;
+  searchParams: Promise<{ cw?: string; month?: string; pPage?: string }>;
 }) {
   const params = await searchParams;
   const profile = await getProfile();
@@ -29,11 +31,14 @@ export default async function CashPage({
   const range = monthRange(month);
   const today = new Date().toISOString().slice(0, 10);
 
+  const pPage = Math.max(1, Number(params.pPage ?? 1) || 1);
+  const pFrom = (pPage - 1) * PAYMENTS_PAGE_SIZE;
+  const pTo = pFrom + PAYMENTS_PAGE_SIZE - 1;
+
   const [
     { data: cashRegisters },
     { data: monthCashPayments },
-    { data: totalCashAgg },
-    { data: recentCash },
+    { data: recentCash, count: recentCashCount },
     { data: monthMovements },
     { data: recentMovements },
     { data: todayMovements },
@@ -49,18 +54,15 @@ export default async function CashPage({
       .lt("paid_at", range.end),
     supabase
       .from("payments")
-      .select("paid_amount, coworking_id")
-      .in("coworking_id", cwIds)
-      .eq("payment_method", "cash")
-      .eq("status", "paid"),
-    supabase
-      .from("payments")
-      .select("id, paid_at, paid_amount, concept, coworking_id, client_id, clients(name, company_name), coworkings(name)")
+      .select(
+        "id, paid_at, paid_amount, concept, coworking_id, client_id, clients(name, company_name), coworkings(name)",
+        { count: "exact" },
+      )
       .in("coworking_id", cwIds)
       .eq("payment_method", "cash")
       .eq("status", "paid")
       .order("paid_at", { ascending: false })
-      .limit(40),
+      .range(pFrom, pTo),
     supabase
       .from("cash_movements")
       .select("direction, amount, coworking_id")
@@ -74,7 +76,6 @@ export default async function CashPage({
       .order("occurred_at", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(60),
-    // Ingresos cash de HOY por coworking (para los floats por sede)
     supabase
       .from("payments")
       .select("paid_amount, coworking_id")
@@ -85,10 +86,6 @@ export default async function CashPage({
   ]);
 
   const monthCashTotal = (monthCashPayments ?? []).reduce(
-    (a: number, p: any) => a + Number(p.paid_amount ?? 0),
-    0,
-  );
-  const allTimeCashTotal = (totalCashAgg ?? []).reduce(
     (a: number, p: any) => a + Number(p.paid_amount ?? 0),
     0,
   );
@@ -121,8 +118,9 @@ export default async function CashPage({
         }
       />
 
-      <KpiGrid className="mb-4">
+      <KpiGrid cols={3} className="mb-4">
         <Kpi
+          accent
           label="Efectivo en caja"
           value={formatCurrency(totalFloat)}
           hint={`${visibleCoworkings.length} coworking${visibleCoworkings.length === 1 ? "" : "s"}`}
@@ -138,12 +136,6 @@ export default async function CashPage({
           value={`+${formatCurrency(monthMovIn)} / −${formatCurrency(monthMovOut)}`}
           hint="Sin factura · gastos menores"
           valueClassName={monthMovOut > monthMovIn ? "text-amber-700" : "text-emerald-700"}
-        />
-        <Kpi
-          accent
-          label="Cobros · histórico"
-          value={formatCurrency(allTimeCashTotal)}
-          hint="todo el periodo"
         />
       </KpiGrid>
 
@@ -185,7 +177,9 @@ export default async function CashPage({
       <Card className="mb-4">
         <CardHeader>
           <CardTitle>Movimientos manuales (sin factura)</CardTitle>
-          <span className="text-[12px] text-ink-500">{recentMovements?.length ?? 0} en histórico</span>
+          <span className="text-[12px] text-ink-500">
+            {canEdit ? "haz clic en una fila para editar" : `${recentMovements?.length ?? 0} en histórico`}
+          </span>
         </CardHeader>
         <CardBody className="p-0">
           {!recentMovements || recentMovements.length === 0 ? (
@@ -201,47 +195,76 @@ export default async function CashPage({
                   <TH>Concepto</TH>
                   <TH>Tipo</TH>
                   <TH className="text-right">Importe</TH>
+                  {canEdit && <TH></TH>}
                 </TR>
               </THead>
               <TBody>
-                {recentMovements.map((m: any) => (
-                  <TR key={m.id}>
-                    <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(m.occurred_at)}</TD>
-                    <TD className="text-[12.5px] text-ink-500">{m.coworkings?.name ?? "—"}</TD>
-                    <TD className="text-[13px] text-ink-950 font-medium">
-                      {m.concept}
-                      {(m.notes || m.category) && (
-                        <p className="text-[11px] text-ink-500 font-normal mt-0.5">
-                          {m.category ? <span>{m.category}</span> : null}
-                          {m.category && m.notes && " · "}
-                          {m.notes}
-                        </p>
-                      )}
-                    </TD>
-                    <TD>
-                      {m.direction === "in" ? (
-                        <Badge tone="success">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          Ingreso
-                        </Badge>
-                      ) : (
-                        <Badge tone="neutral">
-                          <span className="h-1.5 w-1.5 rounded-full bg-ink-400" />
-                          Gasto
-                        </Badge>
-                      )}
-                    </TD>
-                    <TD
-                      className={
-                        "text-right tabular text-[13px] font-medium " +
-                        (m.direction === "out" ? "text-ink-950" : "text-emerald-700")
-                      }
-                    >
-                      {m.direction === "out" ? "−" : "+"}
-                      {formatCurrency(m.amount)}
-                    </TD>
-                  </TR>
-                ))}
+                {recentMovements.map((m: any) => {
+                  const row = (
+                    <>
+                      <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(m.occurred_at)}</TD>
+                      <TD className="text-[12.5px] text-ink-500">{m.coworkings?.name ?? "—"}</TD>
+                      <TD className="text-[13px] text-ink-950 font-medium">
+                        {m.concept}
+                        {(m.notes || m.category) && (
+                          <p className="text-[11px] text-ink-500 font-normal mt-0.5">
+                            {m.category ? <span>{m.category}</span> : null}
+                            {m.category && m.notes && " · "}
+                            {m.notes}
+                          </p>
+                        )}
+                      </TD>
+                      <TD>
+                        {m.direction === "in" ? (
+                          <Badge tone="success">
+                            <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                            Ingreso
+                          </Badge>
+                        ) : (
+                          <Badge tone="neutral">
+                            <span className="h-1.5 w-1.5 rounded-full bg-ink-400" />
+                            Gasto
+                          </Badge>
+                        )}
+                      </TD>
+                      <TD
+                        className={
+                          "text-right tabular text-[13px] font-medium " +
+                          (m.direction === "out" ? "text-ink-950" : "text-emerald-700")
+                        }
+                      >
+                        {m.direction === "out" ? "−" : "+"}
+                        {formatCurrency(m.amount)}
+                      </TD>
+                    </>
+                  );
+                  return (
+                    <TR key={m.id} className={canEdit ? "cursor-pointer" : ""}>
+                      {canEdit ? (
+                        <>
+                          {row}
+                          <TD className="text-right">
+                            <CashMovementForm
+                              coworkings={visibleCoworkings.map((c) => ({ id: c.id, name: c.name }))}
+                              defaultCoworkingId={visibleCoworkings.length === 1 ? visibleCoworkings[0].id : null}
+                              edit={{
+                                id: m.id,
+                                coworking_id: m.coworking_id,
+                                occurred_at: m.occurred_at,
+                                direction: m.direction,
+                                concept: m.concept,
+                                amount: m.amount,
+                                category: m.category,
+                                notes: m.notes,
+                              }}
+                              trigger={<span className="text-[12.5px] text-ink-500 hover:text-ink-900">Editar</span>}
+                            />
+                          </TD>
+                        </>
+                      ) : row}
+                    </TR>
+                  );
+                })}
               </TBody>
             </Table>
           )}
@@ -250,8 +273,8 @@ export default async function CashPage({
 
       <Card>
         <CardHeader>
-          <CardTitle>Últimos cobros en efectivo (con factura)</CardTitle>
-          <span className="text-[12px] text-ink-500">{recentCash?.length ?? 0} más recientes</span>
+          <CardTitle>Cobros en efectivo (con factura)</CardTitle>
+          <span className="text-[12px] text-ink-500">{recentCashCount ?? 0} en total</span>
         </CardHeader>
         <CardBody className="p-0">
           {!recentCash || recentCash.length === 0 ? (
@@ -260,37 +283,55 @@ export default async function CashPage({
               efectivo aparecerá aquí.
             </EmptyState>
           ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Fecha</TH>
-                  <TH>Cliente</TH>
-                  <TH>Concepto</TH>
-                  <TH>Coworking</TH>
-                  <TH className="text-right">Importe</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {recentCash.map((p: any) => (
-                  <TR key={p.id}>
-                    <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(p.paid_at)}</TD>
-                    <TD>
-                      <div className="flex items-center gap-2.5">
-                        <Avatar name={p.clients?.name ?? "—"} size="sm" />
-                        <Link href={`/clients/${p.client_id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
-                          {p.clients?.name ?? "—"}
-                        </Link>
-                      </div>
-                    </TD>
-                    <TD className="text-[12.5px] text-ink-500">{p.concept ?? "—"}</TD>
-                    <TD className="text-[12.5px] text-ink-500">{p.coworkings?.name ?? "—"}</TD>
-                    <TD className="text-right tabular text-[13px] font-medium text-emerald-700">
-                      +{formatCurrency(p.paid_amount)}
-                    </TD>
+            <>
+              <Table>
+                <THead>
+                  <TR>
+                    <TH>Fecha</TH>
+                    <TH>Cliente</TH>
+                    <TH>Concepto</TH>
+                    <TH>Coworking</TH>
+                    <TH className="text-right">Importe</TH>
                   </TR>
-                ))}
-              </TBody>
-            </Table>
+                </THead>
+                <TBody>
+                  {recentCash.map((p: any) => (
+                    <TR key={p.id}>
+                      <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(p.paid_at)}</TD>
+                      <TD>
+                        <div className="flex items-center gap-2.5">
+                          <Avatar name={p.clients?.name ?? "—"} size="sm" />
+                          <Link href={`/clients/${p.client_id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
+                            {p.clients?.name ?? "—"}
+                          </Link>
+                        </div>
+                      </TD>
+                      <TD className="text-[12.5px] text-ink-500">{p.concept ?? "—"}</TD>
+                      <TD className="text-[12.5px] text-ink-500">{p.coworkings?.name ?? "—"}</TD>
+                      <TD className="text-right tabular text-[13px] font-medium text-emerald-700">
+                        +{formatCurrency(p.paid_amount)}
+                      </TD>
+                    </TR>
+                  ))}
+                </TBody>
+              </Table>
+              <div className="px-[18px] pb-4 pt-1">
+                <Pagination
+                  page={pPage}
+                  totalPages={Math.max(1, Math.ceil((recentCashCount ?? 0) / PAYMENTS_PAGE_SIZE))}
+                  total={recentCashCount ?? 0}
+                  pageSize={PAYMENTS_PAGE_SIZE}
+                  hrefFor={(p) => {
+                    const sp = new URLSearchParams();
+                    if (params.cw) sp.set("cw", params.cw);
+                    if (params.month) sp.set("month", params.month);
+                    if (p > 1) sp.set("pPage", String(p));
+                    const qs = sp.toString();
+                    return qs ? `/cash?${qs}` : `/cash`;
+                  }}
+                />
+              </div>
+            </>
           )}
         </CardBody>
       </Card>

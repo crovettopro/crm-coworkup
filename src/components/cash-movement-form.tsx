@@ -1,35 +1,64 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
-import { Plus, Minus, X } from "lucide-react";
+import { Plus, Minus, X, Trash2 } from "lucide-react";
 
 type Coworking = { id: string; name: string };
+
+export type CashMovement = {
+  id: string;
+  coworking_id: string;
+  occurred_at: string;
+  direction: "in" | "out";
+  concept: string;
+  amount: number | string;
+  category?: string | null;
+  notes?: string | null;
+};
 
 export function CashMovementForm({
   coworkings,
   defaultCoworkingId,
+  edit,
+  trigger,
 }: {
   coworkings: Coworking[];
   defaultCoworkingId: string | null;
+  edit?: CashMovement;
+  trigger?: React.ReactNode;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
-  const [direction, setDirection] = useState<"in" | "out">("in");
-  const [coworkingId, setCoworkingId] = useState<string>(defaultCoworkingId ?? coworkings[0]?.id ?? "");
-  const [date, setDate] = useState<string>(new Date().toISOString().slice(0, 10));
-  const [concept, setConcept] = useState("");
-  const [amount, setAmount] = useState<string>("");
-  const [category, setCategory] = useState("");
-  const [notes, setNotes] = useState("");
+  const [direction, setDirection] = useState<"in" | "out">(edit?.direction ?? "in");
+  const [coworkingId, setCoworkingId] = useState<string>(edit?.coworking_id ?? defaultCoworkingId ?? coworkings[0]?.id ?? "");
+  const [date, setDate] = useState<string>(edit?.occurred_at ?? new Date().toISOString().slice(0, 10));
+  const [concept, setConcept] = useState(edit?.concept ?? "");
+  const [amount, setAmount] = useState<string>(edit ? String(edit.amount) : "");
+  const [category, setCategory] = useState(edit?.category ?? "");
+  const [notes, setNotes] = useState(edit?.notes ?? "");
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [, startTransition] = useTransition();
 
+  useEffect(() => {
+    if (open && edit) {
+      setDirection(edit.direction);
+      setCoworkingId(edit.coworking_id);
+      setDate(edit.occurred_at);
+      setConcept(edit.concept);
+      setAmount(String(edit.amount));
+      setCategory(edit.category ?? "");
+      setNotes(edit.notes ?? "");
+    }
+  }, [open, edit]);
+
   function reset() {
+    if (edit) return;
     setConcept(""); setAmount(""); setCategory(""); setNotes("");
     setDate(new Date().toISOString().slice(0, 10));
     setError(null);
@@ -42,7 +71,7 @@ export function CashMovementForm({
     }
     setSaving(true); setError(null);
     const supabase = createClient();
-    const { error: err } = await supabase.from("cash_movements").insert({
+    const payload = {
       coworking_id: coworkingId,
       occurred_at: date,
       direction,
@@ -50,22 +79,45 @@ export function CashMovementForm({
       amount: Number(amount),
       category: category.trim() || null,
       notes: notes.trim() || null,
-    });
+    };
+    const { error: err } = edit
+      ? await supabase.from("cash_movements").update(payload).eq("id", edit.id)
+      : await supabase.from("cash_movements").insert(payload);
     setSaving(false);
     if (err) { setError(err.message); return; }
     setOpen(false); reset();
     startTransition(() => router.refresh());
   }
 
+  async function remove() {
+    if (!edit) return;
+    if (!confirm("¿Eliminar este movimiento? Se ajustará la caja automáticamente.")) return;
+    setDeleting(true); setError(null);
+    const supabase = createClient();
+    const { error: err } = await supabase.from("cash_movements").delete().eq("id", edit.id);
+    setDeleting(false);
+    if (err) { setError(err.message); return; }
+    setOpen(false);
+    startTransition(() => router.refresh());
+  }
+
   return (
     <>
-      <Button onClick={() => setOpen(true)} size="md"><Plus className="h-4 w-4" /> Movimiento de caja</Button>
+      {trigger ? (
+        <button type="button" onClick={() => setOpen(true)} className="contents">
+          {trigger}
+        </button>
+      ) : (
+        <Button onClick={() => setOpen(true)} size="sm">
+          <Plus className="h-3.5 w-3.5" /> Movimiento de caja
+        </Button>
+      )}
 
       {open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => !saving && setOpen(false)}>
-          <div className="w-full max-w-[460px] rounded-2xl border border-ink-100 bg-white shadow-xl" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center justify-between border-b border-ink-100 p-4">
-              <h2 className="font-display text-[16px] font-semibold text-ink-900">Movimiento de caja</h2>
+          <div className="w-full max-w-[460px] rounded-md border border-ink-200 bg-white shadow-overlay" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between border-b border-ink-200 px-4 py-3.5">
+              <h2 className="text-[14px] font-semibold text-ink-950">{edit ? "Editar movimiento" : "Nuevo movimiento de caja"}</h2>
               <button onClick={() => setOpen(false)} className="text-ink-500 hover:text-ink-900"><X className="h-4 w-4" /></button>
             </div>
             <div className="p-4 space-y-3">
@@ -142,10 +194,22 @@ export function CashMovementForm({
               </div>
 
               {error && <p className="text-[12px] text-red-600">{error}</p>}
+              <p className="text-[11px] text-ink-500">
+                {direction === "in"
+                  ? "El ingreso se sumará automáticamente al efectivo en caja."
+                  : "El gasto se restará automáticamente del efectivo en caja."}
+              </p>
             </div>
-            <div className="flex justify-end gap-2 border-t border-ink-100 p-3">
-              <Button variant="outline" onClick={() => { setOpen(false); reset(); }} disabled={saving}>Cancelar</Button>
-              <Button onClick={save} disabled={saving}>{saving ? "Guardando…" : "Guardar"}</Button>
+            <div className="flex items-center justify-between gap-2 border-t border-ink-200 p-3">
+              {edit && (
+                <Button variant="outline" size="sm" onClick={remove} disabled={saving || deleting} className="!text-red-700 !border-red-200 hover:!bg-red-50">
+                  <Trash2 className="h-3.5 w-3.5" /> {deleting ? "Eliminando…" : "Eliminar"}
+                </Button>
+              )}
+              <div className="ml-auto flex gap-2">
+                <Button variant="outline" size="sm" onClick={() => { setOpen(false); reset(); }} disabled={saving || deleting}>Cancelar</Button>
+                <Button size="sm" onClick={save} disabled={saving || deleting}>{saving ? "Guardando…" : edit ? "Guardar cambios" : "Guardar"}</Button>
+              </div>
             </div>
           </div>
         </div>

@@ -13,7 +13,9 @@ import {
 } from "lucide-react";
 import { SalesChart } from "@/components/sales-chart";
 
-export const dynamic = "force-dynamic";
+// SSR con cache server-side de 60s — el ARR/MRR/ventas-12m no cambia segundo a segundo
+// y reducir la carga de queries pesadas mejora notablemente la percepción de velocidad.
+export const revalidate = 60;
 
 export default async function DashboardPage({
   searchParams,
@@ -46,7 +48,7 @@ export default async function DashboardPage({
   const [activeSubs, monthPayments, openIncidents, todayPasses, objective, arrAgg] = await Promise.all([
     supabase
       .from("subscriptions")
-      .select("plan_name, plan_id, final_price, vat_rate, tax_treatment, quantity, client_id, end_date")
+      .select("plan_name, plan_id, final_price, vat_rate, tax_treatment, quantity, billing_months, client_id, end_date")
       .in("coworking_id", cwIds)
       .eq("status", "active"),
     supabase

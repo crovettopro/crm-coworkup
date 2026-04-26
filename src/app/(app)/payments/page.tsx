@@ -14,7 +14,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentRowActions } from "./payment-actions";
 import { Plus, Search, AlertTriangle, Wallet, Check } from "lucide-react";
 
-export const dynamic = "force-dynamic";
+export const revalidate = 30;
 const PAGE_SIZE = 25;
 
 function isoNDaysAgo(n: number) {

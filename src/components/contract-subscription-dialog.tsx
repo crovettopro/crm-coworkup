@@ -39,6 +39,7 @@ export function ContractSubscriptionDialog({
   const [planId, setPlanId] = useState(availablePlans[0]?.id ?? "");
   const [priceNet, setPriceNet] = useState(Number(availablePlans[0]?.default_price ?? 0));
   const [quantity, setQuantity] = useState(1);
+  const [billingMonths, setBillingMonths] = useState<number>(1);
   const [concept, setConcept] = useState("");
   const [startDate, setStartDate] = useState(today);
   const [paymentMethod, setPaymentMethod] = useState("card");
@@ -61,7 +62,14 @@ export function ContractSubscriptionDialog({
     if (plan && !isAdHoc) setConcept("");
   }, [plan?.id]);
 
-  const endDate = useMemo(() => plan?.duration_days ? addDays(startDate, plan.duration_days) : "", [startDate, plan?.duration_days]);
+  const endDate = useMemo(() => {
+    // Si la sub es mensual recurrente, multiplica los días por billing_months
+    if (!plan?.duration_days) return "";
+    const days = plan.billing_cycle === "monthly"
+      ? plan.duration_days * Math.max(1, billingMonths)
+      : plan.duration_days;
+    return addDays(startDate, days);
+  }, [startDate, plan?.duration_days, plan?.billing_cycle, billingMonths]);
 
   // Total = unit × quantity, then discount, then VAT
   const subtotalNet = useMemo(() => Number(priceNet) * Math.max(1, quantity), [priceNet, quantity]);
@@ -90,6 +98,7 @@ export function ContractSubscriptionDialog({
       plan_name: plan.name,
       base_price: Number(priceNet),
       quantity: Math.max(1, quantity),
+      billing_months: plan.billing_cycle === "monthly" ? Math.max(1, billingMonths) : 1,
       discount_type: discountType || null,
       discount_value: discountType ? Number(discountValue) : null,
       final_price: Number(finalNet.toFixed(2)),
@@ -177,8 +186,8 @@ export function ContractSubscriptionDialog({
                     />
                   </Field>
 
-                  {/* Cantidad + Precio + IVA */}
-                  <div className="grid grid-cols-3 gap-3">
+                  {/* Cantidad + Precio + IVA + Periodicidad si es mensual */}
+                  <div className={"grid gap-3 " + (plan?.billing_cycle === "monthly" ? "grid-cols-4" : "grid-cols-3")}>
                     <Field label="Cantidad" hint={isOneOff ? "Nº de pases / unidades" : "Suele ser 1"}>
                       <Input
                         type="number"
@@ -189,7 +198,17 @@ export function ContractSubscriptionDialog({
                         required
                       />
                     </Field>
-                    <Field label="Precio unit. neto (€)">
+                    {plan?.billing_cycle === "monthly" && (
+                      <Field label="Periodicidad" hint="cada cuántos meses paga">
+                        <Select value={String(billingMonths)} onChange={(e) => setBillingMonths(Number(e.target.value))}>
+                          <option value="1">Mensual</option>
+                          <option value="3">Trimestral</option>
+                          <option value="6">Semestral</option>
+                          <option value="12">Anual</option>
+                        </Select>
+                      </Field>
+                    )}
+                    <Field label="Precio neto (€)">
                       <Input type="number" step="0.01" min={0} value={priceNet} onChange={(e) => setPriceNet(Number(e.target.value))} required />
                     </Field>
                     <Field label="IVA (%)">

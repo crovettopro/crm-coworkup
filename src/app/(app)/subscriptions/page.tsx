@@ -33,7 +33,7 @@ export default async function SubscriptionsPage() {
       .order("default_price", { ascending: false }),
     supabase
       .from("subscriptions")
-      .select("id, plan_name, final_price, vat_rate, tax_treatment, quantity, end_date, coworking_id, client:clients(id, name)")
+      .select("id, plan_name, final_price, vat_rate, tax_treatment, quantity, billing_months, end_date, coworking_id, client:clients(id, name)")
       .in("coworking_id", cwIds)
       .eq("status", "active")
       .or(`end_date.is.null,end_date.gte.${graceCutoffISO}`)
@@ -118,7 +118,8 @@ export default async function SubscriptionsPage() {
               <TBody>
                 {activeSubs.map((s: any) => {
                   const seats = Number(s.quantity) || 1;
-                  const mrr = grossPrice(s.final_price, s.tax_treatment, s.vat_rate ?? 21) * seats;
+                  const months = Math.max(1, Number(s.billing_months) || 1);
+                  const mrr = grossPrice(s.final_price, s.tax_treatment, s.vat_rate ?? 21) / months;
                   return (
                     <TR key={s.id}>
                       <TD>
