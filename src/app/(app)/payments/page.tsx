@@ -3,13 +3,16 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, getVisibleCoworkings, resolveCwFilter } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { MetricCard } from "@/components/metric-card";
 import { Table, THead, TBody, TR, TH, TD, EmptyState } from "@/components/ui/table";
-import { Badge, Dot } from "@/components/ui/badge";
+import { Badge } from "@/components/ui/badge";
+import { Avatar } from "@/components/ui/avatar";
+import { KpiGrid, Kpi } from "@/components/ui/kpi";
+import { Pagination } from "@/components/ui/pagination";
+import { Seg, SegLink } from "@/components/ui/seg";
 import { PAYMENT_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentRowActions } from "./payment-actions";
-import { Plus, Search, ChevronLeft, ChevronRight, Calendar } from "lucide-react";
+import { Plus, Search, AlertTriangle, Wallet, Check } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 const PAGE_SIZE = 25;
@@ -20,8 +23,19 @@ function isoNDaysAgo(n: number) {
   return d.toISOString().slice(0, 10);
 }
 
-const TONE: Record<string, any> = {
-  paid: "success", partial: "warning", overdue: "danger", pending: "warning", cancelled: "muted",
+const TONE: Record<string, "success" | "danger" | "neutral" | "warning"> = {
+  paid: "success",
+  partial: "warning",
+  overdue: "danger",
+  pending: "warning",
+  cancelled: "neutral",
+};
+const dotBg: Record<string, string> = {
+  paid: "bg-emerald-500",
+  partial: "bg-amber-500",
+  overdue: "bg-red-500",
+  pending: "bg-amber-500",
+  cancelled: "bg-ink-400",
 };
 
 export default async function PaymentsPage({
@@ -41,8 +55,6 @@ export default async function PaymentsPage({
 
   const supabase = await createClient();
 
-  // Date range filter — default últimos 7 días por paid_at o expected_payment_date
-  // (params.range = "7d" | "30d" | "90d" | "all" | "custom")
   const rangeKey = params.range ?? (params.from || params.to ? "custom" : "7d");
   let dateFrom: string | null = null;
   let dateTo: string | null = null;
@@ -63,8 +75,6 @@ export default async function PaymentsPage({
   function applyFilters(q: any) {
     q = q.in("coworking_id", cwIds);
     if (params.status) q = q.eq("status", params.status);
-    // Filtra por la fecha relevante: paid_at si está, o expected_payment_date.
-    // Implementado con .or() de Postgrest.
     if (dateFrom || dateTo) {
       const conditions: string[] = [];
       if (dateFrom && dateTo) {
@@ -83,29 +93,25 @@ export default async function PaymentsPage({
     return q;
   }
 
-  // Listed payments (current page)
   let listQ = supabase
     .from("payments")
-    .select("id, client_id, concept, expected_amount, paid_amount, status, expected_payment_date, paid_at, payment_method, clients(name, company_name)", { count: "exact" });
+    .select(
+      "id, client_id, concept, expected_amount, paid_amount, status, expected_payment_date, paid_at, payment_method, clients(name, company_name)",
+      { count: "exact" },
+    );
   listQ = applyFilters(listQ);
-  // Pending/overdue first by sorting status asc, then most recent paid date desc
   listQ = listQ.order("status", { ascending: true }).order("paid_at", { ascending: false, nullsFirst: false }).range(fromIdx, toIdx);
   const { data: payments, count: pageCount } = await listQ;
 
-  // Aggregated KPIs (scoped to filters)
   const [overdueAgg, pendingAgg, paidAgg] = await Promise.all([
-    applyFilters(supabase.from("payments").select("expected_amount, paid_amount", { count: "exact" }))
-      .eq("status", "overdue"),
-    applyFilters(supabase.from("payments").select("expected_amount, paid_amount", { count: "exact" }))
-      .eq("status", "pending"),
-    applyFilters(supabase.from("payments").select("paid_amount"))
-      .eq("status", "paid"),
+    applyFilters(supabase.from("payments").select("expected_amount, paid_amount", { count: "exact" })).eq("status", "overdue"),
+    applyFilters(supabase.from("payments").select("expected_amount, paid_amount", { count: "exact" })).eq("status", "pending"),
+    applyFilters(supabase.from("payments").select("expected_amount, paid_amount")).eq("status", "paid"),
   ]);
 
   const overdueAmount = ((overdueAgg as any).data ?? []).reduce(
     (a: number, p: any) => a + (Number(p.expected_amount) - Number(p.paid_amount ?? 0)), 0,
   );
-  // Also count "pending whose expected_payment_date is in the past" as effectively overdue
   const pendingPastAgg = await applyFilters(
     supabase.from("payments").select("expected_amount, paid_amount", { count: "exact" })
       .eq("status", "pending").not("expected_payment_date", "is", null).lt("expected_payment_date", today)
@@ -119,6 +125,10 @@ export default async function PaymentsPage({
   const paidAmount = ((paidAgg as any).data ?? []).reduce(
     (a: number, p: any) => a + Number(p.paid_amount ?? 0), 0,
   );
+  const expectedTotal = ((paidAgg as any).data ?? []).reduce(
+    (a: number, p: any) => a + Number(p.expected_amount ?? 0), 0,
+  );
+  const collectionRate = expectedTotal > 0 ? Math.round((paidAmount / (paidAmount + overdueAmount + overdueDueAmount + pendingAmount)) * 100) : 0;
 
   const totalCount = pageCount ?? 0;
   const totalPages = Math.max(1, Math.ceil(totalCount / PAGE_SIZE));
@@ -136,75 +146,105 @@ export default async function PaymentsPage({
     return qs ? `/payments?${qs}` : `/payments`;
   }
 
+  function rangeHref(k: string) {
+    const sp = new URLSearchParams();
+    if (params.cw) sp.set("cw", params.cw);
+    if (params.q) sp.set("q", params.q);
+    if (params.status) sp.set("status", params.status);
+    sp.set("range", k);
+    return `/payments?${sp.toString()}`;
+  }
+
   return (
     <div>
       <PageHeader
         title="Pagos"
-        subtitle={`${totalCount} ${totalCount === 1 ? "pago" : "pagos"}${totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}`}
+        subtitle={`${totalCount} ${totalCount === 1 ? "pago" : "pagos"} · ${rangeLabel}${totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}`}
         actions={
-          <Link href="/payments/new"><Button><Plus className="h-4 w-4" /> Pago manual</Button></Link>
+          <Link href="/payments/new">
+            <Button size="sm" variant="primary">
+              <Plus className="h-3.5 w-3.5" /> Pago manual
+            </Button>
+          </Link>
         }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-        <MetricCard label="Impagos vencidos" value={formatCurrency(overdueAmount + overdueDueAmount)} tone="danger" hint="Overdue + pending con fecha pasada" />
-        <MetricCard label="Pendientes" value={formatCurrency(pendingAmount)} tone="warning" />
-        <MetricCard label="Cobrado" value={formatCurrency(paidAmount)} tone="success" hint={rangeLabel} />
-      </div>
+      <KpiGrid className="mb-4">
+        <Kpi
+          icon={<AlertTriangle className="h-3 w-3" />}
+          label="Impagos vencidos"
+          value={formatCurrency(overdueAmount + overdueDueAmount)}
+          hint="Overdue + pending con fecha pasada"
+          valueClassName="text-red-700"
+        />
+        <Kpi
+          label="Pendientes"
+          value={formatCurrency(pendingAmount)}
+          hint="A cobrar próximamente"
+          valueClassName="text-amber-700"
+        />
+        <Kpi
+          icon={<Check className="h-3 w-3" />}
+          label="Cobrado"
+          value={formatCurrency(paidAmount)}
+          hint={rangeLabel}
+          valueClassName="text-emerald-700"
+        />
+        <Kpi
+          accent
+          icon={<Wallet className="h-3 w-3" />}
+          label="Tasa de cobro"
+          value={`${collectionRate}%`}
+          hint="paid / total esperado"
+        />
+      </KpiGrid>
 
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        {/* Quick range presets */}
-        {[
-          { k: "7d", l: "Últimos 7d" },
-          { k: "30d", l: "30d" },
-          { k: "90d", l: "90d" },
-          { k: "all", l: "Todo" },
-        ].map((p) => {
-          const sp = new URLSearchParams();
-          if (params.cw) sp.set("cw", params.cw);
-          if (params.q) sp.set("q", params.q);
-          if (params.status) sp.set("status", params.status);
-          sp.set("range", p.k);
-          const isActive = rangeKey === p.k;
-          return (
-            <Link
-              key={p.k}
-              href={`/payments?${sp.toString()}`}
-              className={`inline-flex h-9 items-center rounded-lg border px-3 text-[12.5px] font-medium ${isActive ? "border-ink-900 bg-ink-900 text-white" : "border-ink-200 bg-white text-ink-600 hover:bg-ink-50"}`}
-            >
-              {p.l}
-            </Link>
-          );
-        })}
-      </div>
+      <div className="mb-3.5 flex flex-wrap items-center gap-2">
+        <Seg>
+          <SegLink href={rangeHref("7d")} active={rangeKey === "7d"}>Últimos 7d</SegLink>
+          <SegLink href={rangeHref("30d")} active={rangeKey === "30d"}>30d</SegLink>
+          <SegLink href={rangeHref("90d")} active={rangeKey === "90d"}>90d</SegLink>
+          <SegLink href={rangeHref("all")} active={rangeKey === "all"}>Todo</SegLink>
+        </Seg>
 
-      <form className="mb-4 flex flex-wrap items-center gap-2" action="/payments">
-        {params.cw && <input type="hidden" name="cw" value={params.cw} />}
-        <input type="hidden" name="range" value="custom" />
-        <div className="relative flex-1 min-w-[220px] max-w-md">
-          <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-          <input
-            name="q"
-            defaultValue={params.q ?? ""}
-            placeholder="Buscar por concepto…"
-            className="h-10 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-sm placeholder:text-ink-400 focus:outline-none focus:border-ink-400 focus:ring-2 focus:ring-ink-100"
-          />
-        </div>
-        <select name="status" defaultValue={params.status ?? ""} className="h-10 rounded-lg border border-ink-200 bg-white px-3 text-sm">
-          <option value="">Todos los estados</option>
-          {Object.entries(PAYMENT_STATUS_LABEL).map(([k, v]) => (<option key={k} value={k}>{v}</option>))}
-        </select>
-        <div className="inline-flex items-center gap-1 rounded-lg border border-ink-200 bg-white px-2 text-[12px] text-ink-500">
-          <Calendar className="h-3.5 w-3.5" />
-          <input type="date" name="from" defaultValue={dateFrom ?? ""} className="h-10 bg-transparent text-sm focus:outline-none" />
-          <span>→</span>
-          <input type="date" name="to" defaultValue={dateTo ?? ""} className="h-10 bg-transparent text-sm focus:outline-none" />
-        </div>
-        <Button type="submit" variant="outline">Aplicar</Button>
-        {(params.q || params.status || params.range || params.from || params.to) && (
-          <Link href="/payments" className="text-[12px] text-ink-500 hover:text-ink-900 underline">Reset</Link>
-        )}
-      </form>
+        <form className="flex flex-wrap items-center gap-2 flex-1 min-w-0" action="/payments">
+          {params.cw && <input type="hidden" name="cw" value={params.cw} />}
+          <input type="hidden" name="range" value="custom" />
+          <div className="relative flex-1 min-w-[220px] max-w-md">
+            <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-500" />
+            <input
+              name="q"
+              defaultValue={params.q ?? ""}
+              placeholder="Buscar por concepto…"
+              className="h-8 w-full rounded-md border border-ink-200 bg-white pl-8 pr-2.5 text-[13px] text-ink-900 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
+            />
+          </div>
+          <select
+            name="status"
+            defaultValue={params.status ?? ""}
+            className="h-8 cursor-pointer appearance-none rounded-md border border-ink-200 bg-white pl-2.5 pr-8 text-[13px] text-ink-900 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100 bg-no-repeat bg-[length:14px_14px]"
+            style={{
+              backgroundImage:
+                "url(\"data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%2371717a'><path fill-rule='evenodd' d='M5.23 7.21a.75.75 0 011.06.02L10 11.06l3.71-3.83a.75.75 0 111.08 1.04l-4.25 4.39a.75.75 0 01-1.08 0L5.21 8.27a.75.75 0 01.02-1.06z' clip-rule='evenodd'/></svg>\")",
+              backgroundPosition: "right 8px center",
+            }}
+          >
+            <option value="">Todos los estados</option>
+            {Object.entries(PAYMENT_STATUS_LABEL).map(([k, v]) => (
+              <option key={k} value={k}>{v}</option>
+            ))}
+          </select>
+          <div className="inline-flex items-center gap-1.5 h-8 rounded-md border border-ink-200 bg-white px-2 text-[12px] text-ink-500">
+            <input type="date" name="from" defaultValue={dateFrom ?? ""} className="bg-transparent text-[12.5px] focus:outline-none" />
+            <span>→</span>
+            <input type="date" name="to" defaultValue={dateTo ?? ""} className="bg-transparent text-[12.5px] focus:outline-none" />
+          </div>
+          <Button type="submit" variant="outline" size="sm">Aplicar</Button>
+          {(params.q || params.status || params.range || params.from || params.to) && (
+            <Link href="/payments" className="text-[12.5px] text-ink-500 hover:text-ink-900 underline">Limpiar</Link>
+          )}
+        </form>
+      </div>
 
       {!payments || payments.length === 0 ? (
         <EmptyState title="Sin pagos">No hay pagos para los filtros aplicados.</EmptyState>
@@ -215,8 +255,8 @@ export default async function PaymentsPage({
               <TR>
                 <TH>Cliente</TH>
                 <TH>Concepto</TH>
-                <TH>Importe</TH>
-                <TH>Mes / Pagado</TH>
+                <TH className="text-right">Importe</TH>
+                <TH>Fecha</TH>
                 <TH>Método</TH>
                 <TH>Estado</TH>
                 <TH></TH>
@@ -224,67 +264,58 @@ export default async function PaymentsPage({
             </THead>
             <TBody>
               {payments.map((p: any) => {
-                const realStatus = p.status === "pending" && p.expected_payment_date && p.expected_payment_date < today
-                  ? "overdue"
-                  : p.status;
+                const realStatus =
+                  p.status === "pending" && p.expected_payment_date && p.expected_payment_date < today
+                    ? "overdue"
+                    : p.status;
+                const tone = TONE[realStatus] ?? "neutral";
                 return (
-                  <TR key={p.id} className={realStatus === "overdue" ? "bg-red-50/30" : ""}>
+                  <TR
+                    key={p.id}
+                    className={realStatus === "overdue" ? "bg-red-500/[0.025] hover:bg-red-500/[0.05]" : ""}
+                  >
                     <TD>
-                      <Link href={`/clients/${p.client_id}`} className="font-medium hover:underline">
-                        {p.clients?.name ?? "—"}
-                      </Link>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={p.clients?.name ?? "—"} size="sm" />
+                        <Link href={`/clients/${p.client_id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
+                          {p.clients?.name ?? "—"}
+                        </Link>
+                      </div>
                     </TD>
-                    <TD className="text-[12px] text-ink-600">{p.concept ?? "—"}</TD>
-                    <TD className="font-medium">{formatCurrency(p.expected_amount)}</TD>
-                    <TD className="text-[12px]">
-                      {p.paid_at ? formatDate(p.paid_at) : formatDate(p.expected_payment_date)}
+                    <TD className="text-[12.5px] text-ink-500">{p.concept ?? "—"}</TD>
+                    <TD className="text-right tabular text-[13px] font-medium text-ink-950">
+                      {formatCurrency(p.expected_amount)}
                     </TD>
-                    <TD className="text-[12px] text-ink-600">
+                    <TD className="text-[12.5px] text-ink-500">
+                      <span className="font-mono text-[12px]">
+                        {formatDate(p.paid_at ?? p.expected_payment_date)}
+                      </span>
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500">
                       {p.payment_method ? PAYMENT_METHOD_LABEL[p.payment_method as keyof typeof PAYMENT_METHOD_LABEL] : "—"}
                     </TD>
                     <TD>
-                      <span className="inline-flex items-center gap-2">
-                        <Dot tone={realStatus === "paid" ? "success" : realStatus === "overdue" ? "danger" : "warning"} />
-                        <Badge tone={TONE[realStatus]}>
-                          {PAYMENT_STATUS_LABEL[realStatus as keyof typeof PAYMENT_STATUS_LABEL]}
-                        </Badge>
-                      </span>
+                      <Badge tone={tone}>
+                        <span className={"h-1.5 w-1.5 rounded-full " + (dotBg[realStatus] ?? "bg-ink-400")} />
+                        {PAYMENT_STATUS_LABEL[realStatus as keyof typeof PAYMENT_STATUS_LABEL]}
+                      </Badge>
                     </TD>
-                    <TD className="text-right"><PaymentRowActions payment={p} /></TD>
+                    <TD className="text-right">
+                      <PaymentRowActions payment={p} />
+                    </TD>
                   </TR>
                 );
               })}
             </TBody>
           </Table>
 
-          {totalPages > 1 && (
-            <div className="mt-4 flex items-center justify-between">
-              <p className="text-[12px] text-ink-500">
-                Mostrando {fromIdx + 1}–{Math.min(toIdx + 1, totalCount)} de {totalCount}
-              </p>
-              <div className="flex items-center gap-1">
-                {page > 1 ? (
-                  <Link href={pageHref(page - 1)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-200 bg-white px-3 text-[13px] hover:bg-ink-50">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Anterior
-                  </Link>
-                ) : (
-                  <span className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-3 text-[13px] text-ink-400">
-                    <ChevronLeft className="h-3.5 w-3.5" /> Anterior
-                  </span>
-                )}
-                <span className="px-3 text-[13px] text-ink-700">Página {page} de {totalPages}</span>
-                {page < totalPages ? (
-                  <Link href={pageHref(page + 1)} className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-200 bg-white px-3 text-[13px] hover:bg-ink-50">
-                    Siguiente <ChevronRight className="h-3.5 w-3.5" />
-                  </Link>
-                ) : (
-                  <span className="inline-flex h-9 items-center gap-1 rounded-lg border border-ink-100 bg-ink-50 px-3 text-[13px] text-ink-400">
-                    Siguiente <ChevronRight className="h-3.5 w-3.5" />
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
+          <Pagination
+            page={page}
+            totalPages={totalPages}
+            total={totalCount}
+            pageSize={PAGE_SIZE}
+            hrefFor={pageHref}
+          />
         </>
       )}
     </div>
