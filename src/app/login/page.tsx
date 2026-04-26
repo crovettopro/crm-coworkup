@@ -37,16 +37,16 @@ export default function LoginPage() {
         <div className="pointer-events-none absolute -bottom-40 -left-20 w-[360px] h-[360px] rounded-full bg-brand-400/5 blur-3xl" />
 
         <div className="relative flex items-center gap-3">
-          <Image
-            src="/coworkup-logo.png"
-            alt="Cowork Up"
-            width={180}
-            height={48}
-            priority
-            className="h-9 w-auto"
-            style={{ filter: "brightness(0) invert(1)" }}
-          />
-          <span className="hidden xl:inline-block h-5 w-px bg-ink-700" aria-hidden />
+          <span className="inline-flex items-center rounded-md bg-white px-3 py-2 ring-1 ring-ink-800/40 shadow-sm">
+            <Image
+              src="/coworkup-logo.png"
+              alt="Cowork Up"
+              width={180}
+              height={48}
+              priority
+              className="h-7 w-auto"
+            />
+          </span>
           <p className="hidden xl:inline-block text-[11.5px] uppercase tracking-[0.18em] text-brand-400/90">
             CRM · Operaciones
           </p>
