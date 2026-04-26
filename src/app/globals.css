@@ -3,16 +3,23 @@
 @tailwind utilities;
 
 :root {
-  --bg: #fafbfc;
-  --fg: #11151a;
+  --bg: theme('colors.ink.50');
+  --bg-elev: white;
+  --bg-sunken: theme('colors.ink.100');
+  --bg-hover: #f5f5f5;
+  --line: theme('colors.ink.200');
+  --line-strong: theme('colors.ink.300');
+  --shadow-overlay: 0 12px 32px -12px rgba(9, 9, 11, 0.18), 0 0 0 1px rgba(9, 9, 11, 0.06);
 }
 
 html, body {
   height: 100%;
   background: var(--bg);
-  color: var(--fg);
-  font-family: "Inter", "Plus Jakarta Sans", ui-sans-serif, system-ui, sans-serif;
-  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  color: theme('colors.ink.900');
+  font-family: var(--font-inter), ui-sans-serif, system-ui, sans-serif;
+  font-feature-settings: 'cv11';
+  font-size: 14px;
+  line-height: 1.4;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
 }
@@ -21,7 +28,12 @@ html, body {
 
 input, select, textarea, button { font-family: inherit; }
 
+.font-mono { font-family: var(--font-mono), ui-monospace, monospace; }
+.tabular { font-variant-numeric: tabular-nums; }
+
+::selection { background: theme('colors.brand.200'); color: theme('colors.ink.950'); }
+
 /* Subtle scrollbars */
 ::-webkit-scrollbar { width: 10px; height: 10px; }
-::-webkit-scrollbar-thumb { background: #dde1e7; border-radius: 6px; border: 2px solid #fafbfc; }
-::-webkit-scrollbar-thumb:hover { background: #bcc3cd; }
+::-webkit-scrollbar-thumb { background: theme('colors.ink.200'); border-radius: 6px; border: 2px solid theme('colors.ink.50'); }
+::-webkit-scrollbar-thumb:hover { background: theme('colors.ink.300'); }
