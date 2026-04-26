@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Cowork Up CRM — Rediseño</title>
+<link rel="stylesheet" href="app/styles.css" />
+</head>
+<body>
+<div id="root"></div>
+
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+
+<script src="app/data.js"></script>
+<script type="text/babel" src="tweaks-panel.jsx"></script>
+<script type="text/babel" src="app/icons.jsx"></script>
+<script type="text/babel" src="app/shell.jsx"></script>
+<script type="text/babel" src="app/page-dashboard.jsx"></script>
+<script type="text/babel" src="app/page-clients.jsx"></script>
+<script type="text/babel" src="app/page-finance.jsx"></script>
+<script type="text/babel" src="app/page-other.jsx"></script>
+
+<script type="text/babel">
+const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+  "density": "comfortable",
+  "accent": "gold",
+  "sidebarStyle": "grouped",
+  "showBadges": true
+}/*EDITMODE-END*/;
+
+const ACCENTS = {
+  gold:    { 300: "#fadb5f", 400: "#f7c948", 500: "#f0b429", 700: "#cb6e17" },
+  emerald: { 300: "#6ee7b7", 400: "#34d399", 500: "#10b981", 700: "#047857" },
+  indigo:  { 300: "#a5b4fc", 400: "#818cf8", 500: "#6366f1", 700: "#4338ca" },
+  rose:    { 300: "#fda4af", 400: "#fb7185", 500: "#f43f5e", 700: "#be123c" },
+};
+
+function App() {
+  const [tweaks, setTweak] = window.useTweaks ? window.useTweaks(TWEAK_DEFAULTS) : [TWEAK_DEFAULTS, () => {}];
+  const [page, setPage] = React.useState("dashboard");
+  const [coworking, setCoworking] = React.useState("all");
+
+  // apply accent
+  React.useEffect(() => {
+    const a = ACCENTS[tweaks.accent] || ACCENTS.gold;
+    const r = document.documentElement.style;
+    r.setProperty("--gold-300", a[300]);
+    r.setProperty("--gold-400", a[400]);
+    r.setProperty("--gold-500", a[500]);
+    r.setProperty("--gold-700", a[700]);
+  }, [tweaks.accent]);
+
+  // density
+  React.useEffect(() => {
+    document.body.style.fontSize = tweaks.density === "compact" ? "13px" : "14px";
+  }, [tweaks.density]);
+
+  let Page;
+  switch(page) {
+    case "clients": Page = window.ClientsPage; break;
+    case "payments": Page = window.PaymentsPage; break;
+    case "cash": Page = window.CashPage; break;
+    case "renewals": Page = window.RenewalsPage; break;
+    case "invoices": Page = window.InvoicesPage; break;
+    case "churn": Page = window.ChurnPage; break;
+    case "subscriptions": Page = window.SubscriptionsPage; break;
+    case "calendar": Page = window.CalendarPage; break;
+    case "incidents": Page = window.IncidentsPage; break;
+    case "extras": Page = window.ExtrasPage; break;
+    case "settings": Page = window.SettingsPage; break;
+    default: Page = window.Dashboard;
+  }
+
+  return (
+    <div className="app" data-screen-label={page}>
+      <window.Sidebar current={page} onNav={setPage} />
+      <div className="main">
+        <window.Topbar current={page} coworking={coworking} setCoworking={setCoworking} />
+        <Page />
+      </div>
+
+      {window.TweaksPanel && (
+        <window.TweaksPanel title="Tweaks">
+          <window.TweakSection title="Apariencia">
+            <window.TweakSelect label="Color de acento" value={tweaks.accent}
+              onChange={v => setTweak("accent", v)}
+              options={[
+                {value: "gold", label: "Dorado (marca)"},
+                {value: "emerald", label: "Esmeralda"},
+                {value: "indigo", label: "Índigo"},
+                {value: "rose", label: "Rosa"},
+              ]} />
+            <window.TweakRadio label="Densidad" value={tweaks.density}
+              onChange={v => setTweak("density", v)}
+              options={[
+                {value: "comfortable", label: "Holgada"},
+                {value: "compact", label: "Compacta"},
+              ]} />
+            <window.TweakToggle label="Mostrar contadores en sidebar"
+              value={tweaks.showBadges}
+              onChange={v => setTweak("showBadges", v)} />
+          </window.TweakSection>
+        </window.TweaksPanel>
+      )}
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(<App/>);
+</script>
+</body>
+</html>

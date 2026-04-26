@@ -8,7 +8,7 @@ import { Badge } from "@/components/ui/badge";
 import { Avatar } from "@/components/ui/avatar";
 import { Pagination } from "@/components/ui/pagination";
 import { Plus, Search } from "lucide-react";
-import { formatCurrency, formatDate, grossPrice } from "@/lib/utils";
+import { formatCurrency, formatDate, monthRange, currentMonthString } from "@/lib/utils";
 
 export const revalidate = 30;
 
@@ -62,26 +62,41 @@ export default async function ClientsPage({
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const cwMap = new Map(coworkings.map((c) => [c.id, c.name]));
 
-  // MRR + plan por cliente (subs activas) — el `final_price` ya es el TOTAL mensual del plan,
-  // así que NO multiplicamos por seats. Para subs trimestrales (billing_months=3) dividimos
-  // entre 3 para obtener el equivalente mensual.
+  // MRR = suma REAL de pagos cobrados este mes por cliente.
+  // Más fiel a la realidad que derivar del subscription.final_price (donde clientes con
+  // varias cuotas como "Ayuda en Acción" perdían el desglose). Plan = nombre de la sub
+  // activa más reciente (informativo).
   const ids = (rows ?? []).map((r: any) => r.id);
   const mrrByClient = new Map<string, { mrr: number; plan: string | null; seats: number }>();
   if (ids.length > 0) {
-    const { data: subs } = await supabase
-      .from("subscriptions")
-      .select("client_id, plan_name, final_price, vat_rate, tax_treatment, quantity, billing_months")
-      .eq("status", "active")
-      .in("client_id", ids);
+    const cm = monthRange(currentMonthString());
+    const [{ data: subs }, { data: monthPayments }] = await Promise.all([
+      supabase
+        .from("subscriptions")
+        .select("client_id, plan_name, quantity")
+        .eq("status", "active")
+        .in("client_id", ids),
+      supabase
+        .from("payments")
+        .select("client_id, paid_amount")
+        .eq("status", "paid")
+        .in("client_id", ids)
+        .gte("paid_at", cm.start)
+        .lt("paid_at", cm.end),
+    ]);
+    // Plan + seats desde la sub activa
     for (const s of subs ?? []) {
       const cur = mrrByClient.get((s as any).client_id) ?? { mrr: 0, plan: null, seats: 0 };
       const seats = Number((s as any).quantity) || 1;
-      const months = Math.max(1, Number((s as any).billing_months) || 1);
-      const gross = grossPrice((s as any).final_price, (s as any).tax_treatment, (s as any).vat_rate ?? 21);
-      cur.mrr += gross / months;
       if (!cur.plan) cur.plan = (s as any).plan_name;
       cur.seats = Math.max(cur.seats, seats);
       mrrByClient.set((s as any).client_id, cur);
+    }
+    // MRR = suma de cobros del mes
+    for (const p of monthPayments ?? []) {
+      const cur = mrrByClient.get((p as any).client_id) ?? { mrr: 0, plan: null, seats: 0 };
+      cur.mrr += Number((p as any).paid_amount ?? 0);
+      mrrByClient.set((p as any).client_id, cur);
     }
   }
 
