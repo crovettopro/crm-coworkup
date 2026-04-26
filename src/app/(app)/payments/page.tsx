@@ -93,6 +93,25 @@ export default async function PaymentsPage({
     return q;
   }
 
+  // Impagos pendientes — siempre arriba, sin importar el rango de fechas.
+  // Solo se muestran cuando NO hay un filter explícito que los excluya.
+  const showOverdueBlock = !params.status;
+  let overdueRows: any[] = [];
+  if (showOverdueBlock) {
+    const { data } = await supabase
+      .from("payments")
+      .select(
+        "id, client_id, concept, expected_amount, paid_amount, status, expected_payment_date, paid_at, payment_method, clients(name, company_name)",
+      )
+      .in("coworking_id", cwIds)
+      .or(
+        `status.eq.overdue,and(status.eq.pending,expected_payment_date.lt.${today})`,
+      )
+      .order("expected_payment_date", { ascending: true })
+      .limit(50);
+    overdueRows = data ?? [];
+  }
+
   let listQ = supabase
     .from("payments")
     .select(
@@ -100,6 +119,11 @@ export default async function PaymentsPage({
       { count: "exact" },
     );
   listQ = applyFilters(listQ);
+  // Excluir los impagados que ya mostramos arriba para no duplicar
+  if (showOverdueBlock && overdueRows.length > 0) {
+    const ids = overdueRows.map((r) => `"${r.id}"`).join(",");
+    listQ = listQ.not("id", "in", `(${ids})`);
+  }
   listQ = listQ.order("status", { ascending: true }).order("paid_at", { ascending: false, nullsFirst: false }).range(fromIdx, toIdx);
   const { data: payments, count: pageCount } = await listQ;
 
@@ -246,8 +270,79 @@ export default async function PaymentsPage({
         </form>
       </div>
 
+      {showOverdueBlock && overdueRows.length > 0 && (
+        <div className="mb-4">
+          <div className="mb-2 flex items-center gap-2">
+            <AlertTriangle className="h-3.5 w-3.5 text-red-600" />
+            <h2 className="text-[13.5px] font-semibold text-ink-950">Impagos pendientes</h2>
+            <Badge tone="danger">
+              <span className="h-1.5 w-1.5 rounded-full bg-red-500" />
+              {overdueRows.length}
+            </Badge>
+            <span className="text-[11.5px] text-ink-500">independiente del filtro de fechas</span>
+          </div>
+          <Table>
+            <THead>
+              <TR>
+                <TH>Cliente</TH>
+                <TH>Concepto</TH>
+                <TH className="text-right">Importe</TH>
+                <TH>Vence</TH>
+                <TH>Hace</TH>
+                <TH></TH>
+              </TR>
+            </THead>
+            <TBody>
+              {overdueRows.map((p: any) => {
+                const days = p.expected_payment_date
+                  ? Math.round(
+                      (new Date(today + "T00:00:00Z").getTime() -
+                        new Date(p.expected_payment_date + "T00:00:00Z").getTime()) /
+                        86400000,
+                    )
+                  : 0;
+                return (
+                  <TR key={p.id} className="bg-red-500/[0.03] hover:bg-red-500/[0.06]">
+                    <TD>
+                      <div className="flex items-center gap-2.5">
+                        <Avatar name={p.clients?.name ?? "—"} size="sm" />
+                        <Link
+                          href={`/clients/${p.client_id}`}
+                          className="text-[13px] font-medium text-ink-950 hover:underline"
+                        >
+                          {p.clients?.name ?? "—"}
+                        </Link>
+                      </div>
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500">{p.concept ?? "—"}</TD>
+                    <TD className="text-right tabular text-[13px] font-medium text-red-700">
+                      {formatCurrency(Number(p.expected_amount) - Number(p.paid_amount ?? 0))}
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500 font-mono">
+                      {formatDate(p.expected_payment_date)}
+                    </TD>
+                    <TD className="text-[12.5px] text-red-600 font-medium">
+                      {days <= 0 ? "hoy" : days === 1 ? "1 día" : `${days} días`}
+                    </TD>
+                    <TD className="text-right">
+                      <PaymentRowActions payment={p} />
+                    </TD>
+                  </TR>
+                );
+              })}
+            </TBody>
+          </Table>
+        </div>
+      )}
+
       {!payments || payments.length === 0 ? (
-        <EmptyState title="Sin pagos">No hay pagos para los filtros aplicados.</EmptyState>
+        showOverdueBlock && overdueRows.length > 0 ? (
+          <p className="rounded-md border border-dashed border-ink-300 bg-white px-4 py-6 text-center text-[13px] text-ink-500">
+            Sin pagos en el rango de fechas seleccionado.
+          </p>
+        ) : (
+          <EmptyState title="Sin pagos">No hay pagos para los filtros aplicados.</EmptyState>
+        )
       ) : (
         <>
           <Table>
