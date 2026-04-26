@@ -154,35 +154,33 @@ export default async function SubscriptionsPage({
                     href={planTileHref(p.name)}
                     scroll={false}
                     className={
-                      "rounded-md border px-3.5 py-3 transition-colors " +
+                      "rounded-md border px-3.5 py-3 transition-colors flex items-center justify-between gap-2 " +
                       (active
                         ? "bg-ink-950 border-ink-950 text-white hover:bg-ink-800"
                         : "bg-white border-ink-200 text-ink-700 hover:border-ink-400 hover:bg-ink-50/60")
                     }
                   >
-                    <div className="flex items-center justify-between">
-                      <div
+                    <div className="flex items-center gap-2 min-w-0">
+                      {active && (
+                        <span className="text-brand-400 text-[12px] font-medium shrink-0">✓</span>
+                      )}
+                      <span
                         className={
-                          "text-[10.5px] uppercase tracking-[0.05em] font-medium " +
-                          (active ? "text-brand-400" : "text-ink-500")
+                          "text-[14px] font-semibold tracking-tight truncate " +
+                          (active ? "text-white" : "text-ink-950")
                         }
                       >
-                        {p.billing_cycle === "monthly" ? "Mensual" : "Pase puntual"}
-                      </div>
-                      {active && <span className="text-[11px] font-medium">✓</span>}
+                        {p.name}
+                      </span>
                     </div>
-                    <div
+                    <span
                       className={
-                        "mt-1 text-[15px] font-semibold tracking-tight " +
+                        "text-[20px] font-semibold tracking-tight tabular shrink-0 " +
                         (active ? "text-white" : "text-ink-950")
                       }
                     >
-                      {p.name}
-                    </div>
-                    <div className={"mt-1 text-[11.5px] " + (active ? "text-ink-300" : "text-ink-500")}>
-                      {count} {count === 1 ? "asiento" : "asientos"} activo{count === 1 ? "" : "s"}
-                      {p.duration_days ? ` · ${p.duration_days}d` : ""}
-                    </div>
+                      {count}
+                    </span>
                   </Link>
                 );
               })}
