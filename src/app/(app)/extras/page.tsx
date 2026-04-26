@@ -3,8 +3,10 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, getVisibleCoworkings, resolveCwFilter } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardHeader, CardTitle, CardBody } from "@/components/ui/card";
+import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, THead, TBody, TR, TH, TD, EmptyState } from "@/components/ui/table";
+import { KpiGrid, Kpi } from "@/components/ui/kpi";
+import { Seg, SegLink } from "@/components/ui/seg";
 import { EXTRA_TYPE_LABEL } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { Plus, MonitorSmartphone, Lock, Package } from "lucide-react";
@@ -12,15 +14,18 @@ import { ExtraTile } from "@/components/extra-tile";
 
 export const dynamic = "force-dynamic";
 
+type Tab = "lockers" | "monitors" | "all";
+
 export default async function ExtrasPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cw?: string }>;
+  searchParams: Promise<{ cw?: string; tab?: Tab }>;
 }) {
   const params = await searchParams;
   const profile = await getProfile();
   const coworkings = await getVisibleCoworkings(profile);
   const cwIds = await resolveCwFilter(profile, coworkings, params.cw, { allowAll: false });
+  const tab: Tab = params.tab === "monitors" || params.tab === "all" ? params.tab : "lockers";
 
   const supabase = await createClient();
   const [{ data: extras }, { data: assignments }, { data: clients }] = await Promise.all([
@@ -42,129 +47,152 @@ export default async function ExtrasPage({
 
   const lockers = (extras ?? []).filter((e: any) => e.type === "locker");
   const screens = (extras ?? []).filter((e: any) => e.type === "screen");
-  const others  = (extras ?? []).filter((e: any) => e.type !== "locker" && e.type !== "screen");
+  const others = (extras ?? []).filter((e: any) => e.type !== "locker" && e.type !== "screen");
   const monthlyIncome = (assignments ?? []).reduce((acc: number, a: any) => acc + Number(a.price ?? 0), 0);
 
   const assignmentByExtraId = new Map<string, any>();
   (assignments ?? []).forEach((a: any) => assignmentByExtraId.set(a.extra_id, a));
 
+  const lockersRented = lockers.filter((e: any) => e.status === "rented").length;
+  const screensRented = screens.filter((e: any) => e.status === "rented").length;
+  const totalItems = (extras ?? []).length;
+  const totalRented = (extras ?? []).filter((e: any) => e.status === "rented").length;
+
+  function tabHref(t: Tab) {
+    const sp = new URLSearchParams();
+    if (params.cw) sp.set("cw", params.cw);
+    if (t !== "lockers") sp.set("tab", t);
+    const qs = sp.toString();
+    return qs ? `/extras?${qs}` : `/extras`;
+  }
+
+  // Items shown according to tab
+  const visibleItems =
+    tab === "lockers" ? lockers : tab === "monitors" ? screens : [...lockers, ...screens, ...others];
+
   return (
     <div>
       <PageHeader
         title="Monitores y taquillas"
-        subtitle="Haz clic en un item para asignarlo a un cliente o liberarlo."
-        actions={<Link href="/extras/new"><Button><Plus className="h-4 w-4" /> Añadir item</Button></Link>}
+        subtitle="Asigna inventario a clientes haciendo clic"
+        actions={
+          <Link href="/extras/new">
+            <Button size="sm" variant="outline">
+              <Plus className="h-3.5 w-3.5" /> Añadir
+            </Button>
+          </Link>
+        }
       />
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-6">
-        <SummaryCard
-          icon={<Lock className="h-4 w-4" />}
+      <KpiGrid cols={3} className="mb-4">
+        <Kpi
+          icon={<Lock className="h-3 w-3" />}
           label="Taquillas"
-          rented={lockers.filter((e: any) => e.status === "rented").length}
-          total={lockers.length}
+          value={`${lockersRented}/${lockers.length}`}
+          hint="alquiladas"
         />
-        <SummaryCard
-          icon={<MonitorSmartphone className="h-4 w-4" />}
+        <Kpi
+          icon={<MonitorSmartphone className="h-3 w-3" />}
           label="Monitores"
-          rented={screens.filter((e: any) => e.status === "rented").length}
-          total={screens.length}
+          value={`${screensRented}/${screens.length}`}
+          hint="alquilados"
         />
-        <SummaryCard
-          icon={<Package className="h-4 w-4" />}
+        <Kpi
+          accent
+          icon={<Package className="h-3 w-3" />}
           label="Ingresos mensuales"
-          customRight={<span className="font-display text-[20px] font-semibold text-ink-900">{formatCurrency(monthlyIncome)}</span>}
+          value={formatCurrency(monthlyIncome)}
+          hint={`${totalRented} de ${totalItems} items en uso`}
         />
+      </KpiGrid>
+
+      <div className="mb-3.5 flex flex-wrap items-center gap-2">
+        <Seg>
+          <SegLink href={tabHref("lockers")} active={tab === "lockers"}>
+            Taquillas ({lockers.length})
+          </SegLink>
+          <SegLink href={tabHref("monitors")} active={tab === "monitors"}>
+            Monitores ({screens.length})
+          </SegLink>
+          {others.length > 0 && (
+            <SegLink href={tabHref("all")} active={tab === "all"}>
+              Todo ({totalItems})
+            </SegLink>
+          )}
+        </Seg>
+        <span className="text-[12.5px] text-ink-500 ml-1">
+          {visibleItems.filter((e: any) => e.status === "rented").length} asignados ·{" "}
+          {visibleItems.filter((e: any) => e.status !== "rented").length} libres
+        </span>
       </div>
 
-      <h2 className="font-display text-[15px] font-semibold text-ink-900 mb-3">Inventario</h2>
-      {(extras ?? []).length === 0 ? (
-        <EmptyState title="Sin items configurados">
+      {visibleItems.length === 0 ? (
+        <EmptyState title="Sin items en esta categoría">
           Añade taquillas, monitores u otro equipamiento.
         </EmptyState>
       ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-          {[
-            { title: "Taquillas", items: lockers, icon: <Lock className="h-3.5 w-3.5" /> },
-            { title: "Monitores", items: screens, icon: <MonitorSmartphone className="h-3.5 w-3.5" /> },
-            ...(others.length > 0 ? [{ title: "Otros", items: others, icon: <Package className="h-3.5 w-3.5" /> }] : []),
-          ].map((group) => (
-            <Card key={group.title}>
-              <CardHeader>
-                <CardTitle className="flex items-center gap-2">
-                  {group.icon} {group.title}
-                  <span className="ml-2 text-[11px] font-medium text-ink-500">
-                    {group.items.filter((e: any) => e.status === "rented").length}/{group.items.length}
-                  </span>
-                </CardTitle>
-              </CardHeader>
-              <CardBody className="pt-0">
-                {group.items.length === 0 ? (
-                  <p className="py-4 text-center text-sm text-ink-500">Sin {group.title.toLowerCase()}.</p>
-                ) : (
-                  <ul className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                    {group.items.map((e: any) => (
-                      <li key={e.id}>
-                        <ExtraTile
-                          extra={e}
-                          assignment={assignmentByExtraId.get(e.id) ?? null}
-                          clients={(clients ?? []).map((c: any) => ({ id: c.id, name: c.name }))}
-                        />
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </CardBody>
-            </Card>
-          ))}
-        </div>
+        <Card className="mb-4">
+          <CardBody>
+            <ul className="grid grid-cols-4 sm:grid-cols-6 lg:grid-cols-8 gap-2">
+              {visibleItems.map((e: any) => (
+                <li key={e.id}>
+                  <ExtraTile
+                    extra={e}
+                    assignment={assignmentByExtraId.get(e.id) ?? null}
+                    clients={(clients ?? []).map((c: any) => ({ id: c.id, name: c.name }))}
+                  />
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
       )}
 
-      <h2 className="font-display text-[15px] font-semibold text-ink-900 mb-3">Alquileres en curso</h2>
-      {!assignments || assignments.length === 0 ? (
-        <EmptyState title="Sin alquileres en curso" />
-      ) : (
-        <Table>
-          <THead><TR><TH>Cliente</TH><TH>Item</TH><TH>Precio</TH><TH>Desde</TH></TR></THead>
-          <TBody>
-            {assignments.map((a: any) => (
-              <TR key={a.id}>
-                <TD><Link href={`/clients/${a.client_id}`} className="font-medium hover:underline">{a.clients?.name ?? "—"}</Link></TD>
-                <TD className="text-[13px]">{EXTRA_TYPE_LABEL[a.extras?.type as keyof typeof EXTRA_TYPE_LABEL]} · <span className="font-mono">{a.extras?.identifier}</span></TD>
-                <TD className="font-medium">{formatCurrency(a.price)}<span className="text-[12px] text-ink-500">/mes</span></TD>
-                <TD className="text-[12px]">{formatDate(a.start_date)}</TD>
-              </TR>
-            ))}
-          </TBody>
-        </Table>
-      )}
-    </div>
-  );
-}
-
-function SummaryCard({
-  icon, label, rented, total, customRight,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  rented?: number;
-  total?: number;
-  customRight?: React.ReactNode;
-}) {
-  return (
-    <div className="rounded-2xl border border-ink-100 bg-white p-5 shadow-soft">
-      <div className="flex items-center justify-between">
-        <p className="inline-flex items-center gap-2 text-[12px] font-medium text-ink-500">
-          <span className="text-ink-400">{icon}</span> {label}
-        </p>
-      </div>
-      {customRight ? (
-        <div className="mt-3">{customRight}</div>
-      ) : (
-        <div className="mt-3 flex items-end gap-2">
-          <span className="font-display text-[26px] font-semibold text-ink-900">{rented}</span>
-          <span className="text-[13px] text-ink-500 mb-1">de {total} alquilados</span>
-        </div>
-      )}
+      <Card>
+        <CardHeader>
+          <CardTitle>Alquileres en curso</CardTitle>
+          <span className="text-[12px] text-ink-500">{assignments?.length ?? 0}</span>
+        </CardHeader>
+        <CardBody className="p-0">
+          {!assignments || assignments.length === 0 ? (
+            <EmptyState title="Sin alquileres en curso" />
+          ) : (
+            <Table>
+              <THead>
+                <TR>
+                  <TH>Cliente</TH>
+                  <TH>Item</TH>
+                  <TH className="text-right">Precio</TH>
+                  <TH>Desde</TH>
+                </TR>
+              </THead>
+              <TBody>
+                {assignments.map((a: any) => (
+                  <TR key={a.id}>
+                    <TD>
+                      <Link href={`/clients/${a.client_id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
+                        {a.clients?.name ?? "—"}
+                      </Link>
+                    </TD>
+                    <TD className="text-[12.5px]">
+                      <span className="text-ink-700">
+                        {EXTRA_TYPE_LABEL[a.extras?.type as keyof typeof EXTRA_TYPE_LABEL]}
+                      </span>{" "}
+                      ·{" "}
+                      <span className="font-mono text-ink-950">{a.extras?.identifier}</span>
+                    </TD>
+                    <TD className="text-right tabular text-[13px] font-medium text-ink-950">
+                      {formatCurrency(a.price)}
+                      <span className="text-[11px] text-ink-500"> /mes</span>
+                    </TD>
+                    <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(a.start_date)}</TD>
+                  </TR>
+                ))}
+              </TBody>
+            </Table>
+          )}
+        </CardBody>
+      </Card>
     </div>
   );
 }

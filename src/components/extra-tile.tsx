@@ -93,18 +93,20 @@ export function ExtraTile({
         type="button"
         onClick={() => { setOpen(true); setError(null); }}
         className={cn(
-          "rounded-lg border p-2.5 text-center transition-colors",
+          "aspect-square w-full rounded border flex flex-col items-center justify-center p-1.5 transition-colors",
           isRented
-            ? "border-ink-900 bg-ink-900 text-white hover:bg-ink-800"
-            : "border-ink-200 bg-white text-ink-700 hover:border-ink-400 hover:bg-ink-50",
+            ? "bg-ink-950 border-ink-950 text-white hover:bg-ink-800"
+            : "bg-white border-ink-200 text-ink-700 hover:border-ink-400",
         )}
         title={isRented ? `Alquilado a ${assignment?.client?.name ?? "—"}` : "Disponible — clic para asignar"}
       >
-        <p className="text-[13px] font-mono font-semibold">{extra.identifier}</p>
-        <p className={cn(
-          "text-[10.5px] uppercase tracking-wider",
-          isRented ? "text-brand-400" : "text-ink-400",
-        )}>
+        <p className="font-mono text-[13px] font-semibold leading-none">{extra.identifier}</p>
+        <p
+          className={cn(
+            "mt-1 text-[9.5px] truncate max-w-full leading-none",
+            isRented ? "text-white/70" : "text-ink-400",
+          )}
+        >
           {isRented ? assignment?.client?.name?.split(" ")[0] ?? "ocupado" : "libre"}
         </p>
       </button>
