@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, ListChecks, CreditCard, FileText,
@@ -66,15 +67,17 @@ export function Sidebar({
   return (
     <aside className="flex h-screen w-[224px] flex-col bg-white border-r border-ink-200 sticky top-0">
       {/* Brand */}
-      <div className="flex items-center gap-2.5 px-4 pt-[18px] pb-3.5">
-        <div className="grid h-7 w-7 place-items-center rounded-[7px] bg-ink-950 text-brand-400 text-[13px] font-bold tracking-tight">
-          cu
-        </div>
-        <div className="flex flex-col">
-          <span className="text-[13.5px] font-semibold text-ink-950 tracking-tight leading-tight">Cowork Up</span>
-          <span className="text-[11px] text-ink-500 leading-tight">CRM · Valencia</span>
-        </div>
-      </div>
+      <Link href="/dashboard" className="flex items-center gap-2.5 px-4 pt-[18px] pb-3.5 hover:opacity-90 transition-opacity">
+        <Image
+          src="/coworkup-logo.png"
+          alt="Cowork Up"
+          width={120}
+          height={36}
+          priority
+          className="h-7 w-auto"
+        />
+        <span className="text-[10.5px] font-medium uppercase tracking-[0.06em] text-ink-400 ml-auto">CRM</span>
+      </Link>
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto pb-2">

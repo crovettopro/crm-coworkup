@@ -1,9 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Bell, ChevronDown, Plus, Search } from "lucide-react";
+import { ChevronDown, Plus, Search } from "lucide-react";
 import type { Coworking } from "@/lib/types";
+import { CommandSearch } from "@/components/command-search";
+import { NotificationsBell } from "@/components/notifications-bell";
 
 const COOKIE_KEY = "active_cw";
 
@@ -110,12 +113,16 @@ export function Topbar({
 
       <div className="flex-1" />
 
-      {/* Search (cosmetic placeholder) */}
-      <div className="hidden md:flex items-center gap-2 h-[30px] px-2.5 rounded-md bg-ink-100 text-[12.5px] text-ink-500 cursor-pointer hover:bg-ink-200 min-w-[220px]">
-        <Search className="h-3.5 w-3.5" />
-        <span>Buscar clientes, pagos…</span>
-        <span className="ml-auto font-mono text-[10.5px] text-ink-500 bg-white border border-ink-200 px-1.5 py-px rounded">⌘K</span>
-      </div>
+      {/* Search ⌘K (funcional) */}
+      <CommandSearch
+        trigger={
+          <div className="hidden md:flex items-center gap-2 h-[30px] px-2.5 rounded-md bg-ink-100 text-[12.5px] text-ink-500 cursor-pointer hover:bg-ink-200 min-w-[220px]">
+            <Search className="h-3.5 w-3.5" />
+            <span>Buscar clientes…</span>
+            <span className="ml-auto font-mono text-[10.5px] text-ink-500 bg-white border border-ink-200 px-1.5 py-px rounded">⌘K</span>
+          </div>
+        }
+      />
 
       {/* CW selector */}
       <div className="relative">
@@ -170,23 +177,16 @@ export function Topbar({
       </div>
 
       {/* Notifications */}
-      <button
-        type="button"
-        title="Notificaciones"
-        className="relative grid place-items-center h-[30px] w-[30px] rounded-md bg-white border border-ink-200 text-ink-600 hover:border-ink-300 hover:text-ink-900 hover:bg-[#f5f5f5]"
-      >
-        <Bell className="h-3.5 w-3.5" />
-        <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-500 ring-[1.5px] ring-white" />
-      </button>
+      <NotificationsBell />
 
       {/* Quick action */}
-      <button
-        type="button"
-        title="Nuevo"
+      <Link
+        href="/clients/new"
+        title="Nuevo cliente"
         className="inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-md bg-ink-950 text-white text-[12.5px] font-medium hover:bg-ink-800"
       >
         <Plus className="h-3.5 w-3.5" /> Nuevo
-      </button>
+      </Link>
     </div>
   );
 }

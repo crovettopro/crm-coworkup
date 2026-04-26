@@ -16,27 +16,65 @@ import { Plus, Search, AlertTriangle } from "lucide-react";
 export const revalidate = 30;
 const PAGE_SIZE = 25;
 
+function isoNDaysAgo(n: number) {
+  const d = new Date();
+  d.setDate(d.getDate() - n);
+  return d.toISOString().slice(0, 10);
+}
+
 export default async function InvoicesPage({
   searchParams,
 }: {
-  searchParams: Promise<{ cw?: string; status?: string; q?: string; month?: string; page?: string }>;
+  searchParams: Promise<{ cw?: string; status?: string; q?: string; from?: string; to?: string; range?: string; page?: string }>;
 }) {
   const params = await searchParams;
   const profile = await getProfile();
   const coworkings = await getVisibleCoworkings(profile);
   const cwIds = await resolveCwFilter(profile, coworkings, params.cw, { allowAll: false });
 
+  const today = new Date().toISOString().slice(0, 10);
   const page = Math.max(1, Number(params.page ?? 1) || 1);
   const fromIdx = (page - 1) * PAGE_SIZE;
   const toIdx = fromIdx + PAGE_SIZE - 1;
 
   const supabase = await createClient();
-  const monthFilter = params.month ? monthRange(params.month) : null;
+
+  // Rango por issue_date — default últimos 30 días
+  const rangeKey = params.range ?? (params.from || params.to ? "custom" : "30d");
+  let dateFrom: string | null = null;
+  let dateTo: string | null = null;
+  let rangeLabel = "";
+  if (rangeKey === "custom") {
+    dateFrom = params.from || null;
+    dateTo = params.to || null;
+    rangeLabel = `${dateFrom ?? "—"} → ${dateTo ?? "—"}`;
+  } else if (rangeKey === "all") {
+    rangeLabel = "todas";
+  } else {
+    const days = rangeKey === "7d" ? 7 : rangeKey === "90d" ? 90 : rangeKey === "365d" ? 365 : 30;
+    dateFrom = isoNDaysAgo(days);
+    dateTo = today;
+    rangeLabel = `últimos ${days} días`;
+  }
 
   function applyFilters(q: any) {
     q = q.in("coworking_id", cwIds);
     if (params.status) q = q.eq("status", params.status);
-    if (monthFilter) q = q.gte("month", monthFilter.start).lt("month", monthFilter.end);
+    if (dateFrom || dateTo) {
+      // Filtra por issue_date si está, o por month si no (para to_issue sin fecha emisión)
+      const conditions: string[] = [];
+      if (dateFrom && dateTo) {
+        conditions.push(`and(issue_date.gte.${dateFrom},issue_date.lte.${dateTo})`);
+        conditions.push(`and(issue_date.is.null,month.gte.${dateFrom},month.lte.${dateTo})`);
+      } else if (dateFrom) {
+        conditions.push(`issue_date.gte.${dateFrom}`);
+        conditions.push(`and(issue_date.is.null,month.gte.${dateFrom})`);
+      } else if (dateTo) {
+        conditions.push(`issue_date.lte.${dateTo}`);
+        conditions.push(`and(issue_date.is.null,month.lte.${dateTo})`);
+      }
+      q = q.or(conditions.join(","));
+    }
     if (params.q) q = q.or(`invoice_number.ilike.%${params.q}%,concept.ilike.%${params.q}%`);
     return q;
   }
@@ -54,6 +92,7 @@ export default async function InvoicesPage({
   const cm = monthRange(currentMonthString());
   const currentYear = new Date().getFullYear();
   const ytdStart = `${currentYear}-01-01`;
+  // (today/range ya calculados arriba)
 
   const [toIssueAgg, issuedThisMonthAgg, paidWithoutInvoice, ytdAgg, vatAgg] = await Promise.all([
     supabase.from("invoices").select("id", { count: "exact", head: true })
@@ -102,7 +141,9 @@ export default async function InvoicesPage({
     if (params.cw) sp.set("cw", params.cw);
     if (params.q) sp.set("q", params.q);
     if (params.status) sp.set("status", params.status);
-    if (params.month) sp.set("month", params.month);
+    if (params.range) sp.set("range", params.range);
+    if (params.from) sp.set("from", params.from);
+    if (params.to) sp.set("to", params.to);
     if (p > 1) sp.set("page", String(p));
     const qs = sp.toString();
     return qs ? `/invoices?${qs}` : `/invoices`;
@@ -112,10 +153,21 @@ export default async function InvoicesPage({
     const sp = new URLSearchParams();
     if (params.cw) sp.set("cw", params.cw);
     if (params.q) sp.set("q", params.q);
-    if (params.month) sp.set("month", params.month);
+    if (params.range) sp.set("range", params.range);
+    if (params.from) sp.set("from", params.from);
+    if (params.to) sp.set("to", params.to);
     if (s) sp.set("status", s);
     const qs = sp.toString();
     return qs ? `/invoices?${qs}` : `/invoices`;
+  }
+
+  function rangeHref(k: string) {
+    const sp = new URLSearchParams();
+    if (params.cw) sp.set("cw", params.cw);
+    if (params.q) sp.set("q", params.q);
+    if (params.status) sp.set("status", params.status);
+    sp.set("range", k);
+    return `/invoices?${sp.toString()}`;
   }
 
   return (
@@ -211,9 +263,18 @@ export default async function InvoicesPage({
           <SegLink href={statusHref("paid")} active={params.status === "paid"}>Pagadas</SegLink>
         </Seg>
 
+        <Seg>
+          <SegLink href={rangeHref("7d")} active={rangeKey === "7d"}>7d</SegLink>
+          <SegLink href={rangeHref("30d")} active={rangeKey === "30d"}>30d</SegLink>
+          <SegLink href={rangeHref("90d")} active={rangeKey === "90d"}>90d</SegLink>
+          <SegLink href={rangeHref("365d")} active={rangeKey === "365d"}>1y</SegLink>
+          <SegLink href={rangeHref("all")} active={rangeKey === "all"}>Todo</SegLink>
+        </Seg>
+
         <form className="flex flex-wrap items-center gap-2 flex-1 min-w-0" action="/invoices">
           {params.cw && <input type="hidden" name="cw" value={params.cw} />}
           {params.status && <input type="hidden" name="status" value={params.status} />}
+          <input type="hidden" name="range" value="custom" />
           <div className="relative flex-1 min-w-[220px] max-w-md">
             <Search className="pointer-events-none absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-ink-500" />
             <input
@@ -223,14 +284,13 @@ export default async function InvoicesPage({
               className="h-8 w-full rounded-md border border-ink-200 bg-white pl-8 pr-2.5 text-[13px] text-ink-900 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
             />
           </div>
-          <input
-            type="month"
-            name="month"
-            defaultValue={params.month ?? ""}
-            className="h-8 rounded-md border border-ink-200 bg-white px-2.5 text-[13px] hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
-          />
+          <div className="inline-flex items-center gap-1.5 h-8 rounded-md border border-ink-200 bg-white px-2 text-[12px] text-ink-500">
+            <input type="date" name="from" defaultValue={dateFrom ?? ""} className="bg-transparent text-[12.5px] focus:outline-none" />
+            <span>→</span>
+            <input type="date" name="to" defaultValue={dateTo ?? ""} className="bg-transparent text-[12.5px] focus:outline-none" />
+          </div>
           <Button type="submit" variant="outline" size="sm">Aplicar</Button>
-          {(params.q || params.month) && (
+          {(params.q || params.range || params.from || params.to) && (
             <Link href={statusHref(params.status ?? "")} className="text-[12.5px] text-ink-500 hover:text-ink-900 underline">
               Limpiar
             </Link>

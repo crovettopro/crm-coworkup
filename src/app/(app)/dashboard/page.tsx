@@ -45,12 +45,13 @@ export default async function DashboardPage({
   chartStart.setDate(1);
   const chartStartISO = chartStart.toISOString().slice(0, 10);
 
-  const [activeSubs, monthPayments, openIncidents, todayPasses, objective, arrAgg] = await Promise.all([
-    supabase
-      .from("subscriptions")
-      .select("plan_name, plan_id, final_price, vat_rate, tax_treatment, quantity, billing_months, client_id, end_date")
-      .in("coworking_id", cwIds)
-      .eq("status", "active"),
+  const [
+    cwSummary, subsByPlanRows, monthPayments, openIncidents, todayPasses, objective, arrAgg, chartAgg, topAgg,
+  ] = await Promise.all([
+    // 1 query con MRR/coworkers/asientos/ocupación pre-calculados (MV)
+    supabase.from("dashboard_cw_summary_mv").select("*").in("coworking_id", cwIds),
+    // Subs activas por plan (MV)
+    supabase.from("dashboard_subs_by_plan_mv").select("plan_name, count").in("coworking_id", cwIds),
     supabase
       .from("payments")
       .select("expected_amount, paid_amount, status, expected_payment_date, client_id, clients(name)")
@@ -84,9 +85,6 @@ export default async function DashboardPage({
       .in("coworking_id", cwIds)
       .eq("status", "paid")
       .gte("paid_at", arrStartISO).lt("paid_at", arrEndISO),
-  ]);
-
-  const [chartAgg, topAgg] = await Promise.all([
     supabase
       .from("monthly_sales_view")
       .select("month_key, total")
@@ -101,31 +99,10 @@ export default async function DashboardPage({
       .limit(6),
   ]);
 
-  const graceCutoff = new Date();
-  graceCutoff.setDate(graceCutoff.getDate() - 7);
-  const graceCutoffISO = graceCutoff.toISOString().slice(0, 10);
-  const activeSubsList = (activeSubs.data ?? []).filter((s: any) => !s.end_date || s.end_date >= graceCutoffISO);
-  const isVirtualOffice = (s: any) => /oficina\s+virtual/i.test(s.plan_name ?? "");
-
-  function occupancyWeight(planName: string | null): number {
-    const n = (planName ?? "").toLowerCase().trim();
-    if (/oficina\s+virtual/.test(n)) return 0;
-    if (/tardes/.test(n)) return 0;
-    if (/fijo/.test(n)) return 1.0;
-    if (/^oficina/.test(n)) return 1.0;
-    if (/flexible/.test(n)) return 0.8;
-    if (/20\s*horas/.test(n)) return 0.6;
-    if (/10\s*horas/.test(n)) return 0.1;
-    return 0;
-  }
-
-  const occupiedSeats = activeSubsList.reduce(
-    (a: number, s: any) => a + occupancyWeight(s.plan_name) * (Number(s.quantity) || 1),
-    0,
-  );
-  const coworkers = activeSubsList
-    .filter((s: any) => !isVirtualOffice(s))
-    .reduce((a: number, s: any) => a + (Number(s.quantity) || 1), 0);
+  // Agregados pre-calculados en la MV — sumamos por todos los coworkings visibles
+  const summaryRows = ((cwSummary as any).data ?? []) as any[];
+  const coworkers = summaryRows.reduce((a, r) => a + Number(r.coworkers ?? 0), 0);
+  const occupiedSeats = summaryRows.reduce((a, r) => a + Number(r.occupied_seats ?? 0), 0);
   const arrGross = ((arrAgg as any).data ?? []).reduce((a: number, p: any) => a + Number(p.paid_amount ?? 0), 0);
 
   const expectedGross = (monthPayments.data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
@@ -160,8 +137,11 @@ export default async function DashboardPage({
     total: Number(r.total_12m ?? 0),
   }));
 
+  // Subs by plan (MV — ya agregada por coworking)
   const byPlan = new Map<string, number>();
-  for (const s of activeSubsList) byPlan.set(s.plan_name, (byPlan.get(s.plan_name) ?? 0) + (Number(s.quantity) || 1));
+  for (const r of ((subsByPlanRows as any).data ?? []) as any[]) {
+    byPlan.set(r.plan_name, (byPlan.get(r.plan_name) ?? 0) + Number(r.count ?? 0));
+  }
   const subsByPlan = Array.from(byPlan.entries()).sort((a, b) => b[1] - a[1]);
   const todayPassesList = (todayPasses.data ?? []);
 
