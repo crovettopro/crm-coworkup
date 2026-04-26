@@ -18,6 +18,12 @@ export function ObjectiveCard({
   collected,
   expected,
   canEdit,
+  forecastAmount = 0,
+  forecastCount = 0,
+  upcomingAmount = 0,
+  upcomingCount = 0,
+  recoverableAmount = 0,
+  recoverableCount = 0,
 }: {
   coworkingId: string | null;
   isGlobal: boolean;
@@ -28,6 +34,13 @@ export function ObjectiveCard({
   collected: number;
   expected: number;
   canEdit: boolean;
+  // Renovaciones potenciales del mes
+  forecastAmount?: number;
+  forecastCount?: number;
+  upcomingAmount?: number;
+  upcomingCount?: number;
+  recoverableAmount?: number;
+  recoverableCount?: number;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -120,16 +133,67 @@ export function ObjectiveCard({
               / {formatCurrency(target)} <span className="text-ink-700 font-medium">· {pct}%</span>
             </span>
           </div>
-          <div className="mt-3 h-1.5 w-full rounded-full bg-ink-100 overflow-hidden">
-            <div
-              className={"h-full rounded-full transition-all " + (pct >= 100 ? "bg-emerald-500" : "bg-brand-500")}
-              style={{ width: `${pct}%` }}
-            />
-          </div>
+
+          {/* Progress bar con dos capas: cobrado (sólido) + forecast (translúcido) */}
+          {(() => {
+            const projected = collected + forecastAmount;
+            const projectedPct = target > 0 ? Math.min(100, Math.round((projected / target) * 100)) : 0;
+            return (
+              <div className="relative mt-3 h-1.5 w-full rounded-full bg-ink-100 overflow-hidden">
+                {forecastAmount > 0 && (
+                  <div
+                    className="absolute inset-y-0 left-0 rounded-full bg-brand-300/50"
+                    style={{ width: `${projectedPct}%` }}
+                  />
+                )}
+                <div
+                  className={
+                    "absolute inset-y-0 left-0 rounded-full transition-all " +
+                    (pct >= 100 ? "bg-emerald-500" : "bg-brand-500")
+                  }
+                  style={{ width: `${pct}%` }}
+                />
+              </div>
+            );
+          })()}
+
           <div className="mt-2.5 flex items-center justify-between text-[11.5px] text-ink-500">
             <span>{remaining > 0 ? `${formatCurrency(remaining)} para alcanzar el objetivo` : "🎉 Objetivo superado"}</span>
             <span>{daysLeft} días restantes</span>
           </div>
+
+          {forecastAmount > 0 && (
+            <div className="mt-3 pt-2.5 border-t border-ink-200 space-y-1.5">
+              <div className="flex items-baseline justify-between gap-2 text-[12px]">
+                <span className="text-ink-700 font-medium">
+                  Si renuevan todas →{" "}
+                  <span className="text-ink-950 tabular font-semibold">{formatCurrency(collected + forecastAmount)}</span>
+                </span>
+                <span
+                  className={
+                    "text-[11px] font-medium " +
+                    (collected + forecastAmount >= target ? "text-emerald-700" : "text-amber-700")
+                  }
+                >
+                  {collected + forecastAmount >= target ? "✓ alcanzaríamos" : `faltan ${formatCurrency(Math.max(0, target - (collected + forecastAmount)))}`}
+                </span>
+              </div>
+              <div className="flex items-center gap-3 text-[11px] text-ink-500">
+                {upcomingAmount > 0 && (
+                  <span>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-brand-400 mr-1.5 align-middle" />
+                    {upcomingCount} por renovar · <span className="tabular">{formatCurrency(upcomingAmount)}</span>
+                  </span>
+                )}
+                {recoverableAmount > 0 && (
+                  <span>
+                    <span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-500 mr-1.5 align-middle" />
+                    {recoverableCount} en gracia · <span className="tabular">{formatCurrency(recoverableAmount)}</span>
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
         </>
       )}
     </div>

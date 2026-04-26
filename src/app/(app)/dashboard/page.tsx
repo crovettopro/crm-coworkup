@@ -45,8 +45,14 @@ export default async function DashboardPage({
   chartStart.setDate(1);
   const chartStartISO = chartStart.toISOString().slice(0, 10);
 
+  // Forecast de renovaciones — subs cuyo end_date cae en [hoy-7d, fin del mes]
+  const graceCutoff = new Date();
+  graceCutoff.setDate(graceCutoff.getDate() - 7);
+  const graceCutoffISO = graceCutoff.toISOString().slice(0, 10);
+  const endOfMonth = new Date(monthYear, monthNum, 0).toISOString().slice(0, 10);
+
   const [
-    cwSummary, subsByPlanRows, monthPayments, openIncidents, todayPasses, objective, arrAgg, chartAgg, topAgg,
+    cwSummary, subsByPlanRows, monthPayments, openIncidents, todayPasses, objective, arrAgg, chartAgg, topAgg, renewalSubs,
   ] = await Promise.all([
     // 1 query con MRR/coworkers/asientos/ocupación pre-calculados (MV)
     supabase.from("dashboard_cw_summary_mv").select("*").in("coworking_id", cwIds),
@@ -97,6 +103,15 @@ export default async function DashboardPage({
       .gt("total_12m", 0)
       .order("total_12m", { ascending: false })
       .limit(6),
+    // Subs activas cuyo end_date cae en [hoy-7d, fin del mes] — para el forecast
+    supabase
+      .from("subscriptions")
+      .select("plan_name, final_price, vat_rate, tax_treatment, billing_months, end_date")
+      .in("coworking_id", cwIds)
+      .eq("status", "active")
+      .not("end_date", "is", null)
+      .gte("end_date", graceCutoffISO)
+      .lte("end_date", endOfMonth),
   ]);
 
   // Agregados pre-calculados en la MV — sumamos por todos los coworkings visibles
@@ -112,6 +127,28 @@ export default async function DashboardPage({
     p.status === "overdue" || (p.status === "pending" && p.expected_payment_date && p.expected_payment_date < today)
   );
   const overdueAmount = overdue.reduce((a: number, p: any) => a + (Number(p.expected_amount ?? 0) - Number(p.paid_amount ?? 0)), 0);
+
+  // === Forecast de renovaciones ===
+  // Cada sub representa un cobro completo cuando renueva. Para subs trimestrales/anuales,
+  // entra el monto total del periodo, no fraccionado.
+  const renewalRows = ((renewalSubs as any).data ?? []) as any[];
+  let upcomingAmount = 0;
+  let upcomingCount = 0;
+  let recoverableAmount = 0;
+  let recoverableCount = 0;
+  for (const s of renewalRows) {
+    const amount = grossPrice(s.final_price, s.tax_treatment, s.vat_rate ?? 21);
+    if (s.end_date >= today) {
+      upcomingAmount += amount;
+      upcomingCount += 1;
+    } else {
+      recoverableAmount += amount;
+      recoverableCount += 1;
+    }
+  }
+  const forecastAmount = upcomingAmount + recoverableAmount;
+  const forecastCount = upcomingCount + recoverableCount;
+  const projectedTotal = collectedGross + forecastAmount;
 
   // === Sales chart (12 meses) ===
   const MONTH_ES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
@@ -197,6 +234,12 @@ export default async function DashboardPage({
           collected={collectedGross}
           expected={expectedGross}
           canEdit={profile.role === "super_admin" || profile.role === "manager"}
+          forecastAmount={forecastAmount}
+          forecastCount={forecastCount}
+          upcomingAmount={upcomingAmount}
+          upcomingCount={upcomingCount}
+          recoverableAmount={recoverableAmount}
+          recoverableCount={recoverableCount}
         />
 
         <div className="rounded-md border border-ink-200 bg-white px-[18px] py-[14px]">
