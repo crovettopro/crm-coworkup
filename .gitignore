@@ -1,0 +1,25 @@
+node_modules
+.next
+out
+
+# Environment (NUNCA subir credenciales reales)
+.env*
+!.env.example
+
+# OS
+.DS_Store
+
+# Logs / build
+*.log
+*.tsbuildinfo
+
+# Data import (contiene datos reales de clientes — privado)
+import_data/*.csv
+import_data/*.sql
+
+# IDE
+.vscode
+.idea
+
+# Claude/Anthropic local files
+.claude
