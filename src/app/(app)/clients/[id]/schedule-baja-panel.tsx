@@ -83,7 +83,7 @@ export function ScheduleBajaPanel({ client, canRevert }: { client: Client; canRe
     return (
       <Card>
         <CardHeader><CardTitle>Baja</CardTitle></CardHeader>
-        <CardBody className="pt-0 space-y-2">
+        <CardBody className="space-y-2">
           <p className="text-sm">
             <Badge tone="neutral">Cliente de baja</Badge>
             <span className="ml-2 text-ink-500">desde {formatDate(client.end_date)}</span>
@@ -104,7 +104,7 @@ export function ScheduleBajaPanel({ client, canRevert }: { client: Client; canRe
     return (
       <Card>
         <CardHeader><CardTitle>Baja programada</CardTitle></CardHeader>
-        <CardBody className="pt-0 space-y-3">
+        <CardBody className="space-y-3">
           <div className="flex items-center justify-between">
             <span className="inline-flex items-center gap-2 text-sm">
               <Calendar className="h-3.5 w-3.5 text-amber-600" />
@@ -125,7 +125,7 @@ export function ScheduleBajaPanel({ client, canRevert }: { client: Client; canRe
   return (
     <Card>
       <CardHeader><CardTitle>Dar de baja</CardTitle></CardHeader>
-      <CardBody className="pt-0 space-y-3">
+      <CardBody className="space-y-3">
         {mode === "idle" && (
           <div className="space-y-2">
             <button
