@@ -127,9 +127,13 @@ export function ScheduleBajaPanel({ client, canRevert }: { client: Client; canRe
       <CardHeader><CardTitle>Dar de baja</CardTitle></CardHeader>
       <CardBody className="pt-0 space-y-3">
         {mode === "idle" && (
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => setMode("schedule")}>Programar baja</Button>
-            <Button size="sm" variant="danger" onClick={() => setMode("now")}>Baja inmediata</Button>
+          <div className="grid grid-cols-2 gap-2">
+            <Button size="sm" variant="outline" onClick={() => setMode("schedule")} className="w-full">
+              <Calendar className="h-3.5 w-3.5" /> Programar
+            </Button>
+            <Button size="sm" variant="danger" onClick={() => setMode("now")} className="w-full border border-red-600">
+              Baja inmediata
+            </Button>
           </div>
         )}
 

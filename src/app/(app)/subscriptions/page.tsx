@@ -40,8 +40,9 @@ export default async function SubscriptionsPage({
     .map((s) => s.trim())
     .filter(Boolean);
 
-  // Plans + count agregado (independiente del filtro)
-  const [{ data: plans }, { data: planCounts }] = await Promise.all([
+  // Plans + count agregado (independiente del filtro).
+  // Solo planes mensuales recurrentes — fuera Café/Otro/pases puntuales.
+  const [{ data: plansAll }, { data: planCounts }] = await Promise.all([
     supabase
       .from("plans")
       .select("*")
@@ -50,11 +51,18 @@ export default async function SubscriptionsPage({
       .order("name"),
     supabase
       .from("subscriptions")
-      .select("plan_name")
+      .select("plan_name, quantity")
       .in("coworking_id", cwIds)
       .eq("status", "active")
       .or(`end_date.is.null,end_date.gte.${graceCutoffISO}`),
   ]);
+
+  // Solo mostramos planes recurrentes (mensuales o trimestrales) en el catálogo.
+  // El filter excluye Café/Otro/pases — esos se gestionan vía /payments/new.
+  const NON_SUB_TYPES = new Set(["coffee", "misc", "day_pass", "half_day_pass", "week_pass"]);
+  const plans = (plansAll ?? []).filter((p: any) =>
+    p.billing_cycle === "monthly" && !NON_SUB_TYPES.has(p.plan_type),
+  );
 
   // Active subs filtered + paginated
   let subsQ = supabase
@@ -77,10 +85,12 @@ export default async function SubscriptionsPage({
   const cwName = coworkings.find((c) => c.id === cwIds[0])?.name ?? "—";
 
   // Count por plan (case-insensitive — agrupa "20 Horas" / "20 horas")
+  // Sumamos QUANTITY para reflejar el nº real de personas/asientos cubiertos
+  // (Ayuda en Acción suma 12, no 1).
   const countByPlan = new Map<string, number>();
   for (const s of (planCounts ?? []) as any[]) {
     const key = (s.plan_name as string).toLowerCase();
-    countByPlan.set(key, (countByPlan.get(key) ?? 0) + 1);
+    countByPlan.set(key, (countByPlan.get(key) ?? 0) + (Number(s.quantity) || 1));
   }
   const countFor = (name: string) => countByPlan.get(name.toLowerCase()) ?? 0;
 
@@ -170,7 +180,7 @@ export default async function SubscriptionsPage({
                       {p.name}
                     </div>
                     <div className={"mt-1 text-[11.5px] " + (active ? "text-ink-300" : "text-ink-500")}>
-                      {count} {count === 1 ? "activa" : "activas"}
+                      {count} {count === 1 ? "asiento" : "asientos"} activo{count === 1 ? "" : "s"}
                       {p.duration_days ? ` · ${p.duration_days}d` : ""}
                     </div>
                   </Link>

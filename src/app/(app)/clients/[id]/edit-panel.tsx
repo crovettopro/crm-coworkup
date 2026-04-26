@@ -53,14 +53,22 @@ export function ClientEditPanel({ client, coworkings }: { client: Client; cowork
             <Pencil className="h-3 w-3" /> Editar
           </button>
         </CardHeader>
-        <CardBody className="pt-0 space-y-2 text-sm">
-          <Row k="CIF/NIF" v={client.tax_id ?? "—"} />
-          <Row k="Persona contacto" v={client.contact_person ?? "—"} />
-          <Row k="Dirección fiscal" v={client.fiscal_address ?? "—"} />
-          <Row k="Canal" v={client.source ?? "—"} />
+        <CardBody className="space-y-2.5 text-sm">
+          {client.contact_person && <Row k="Persona contacto" v={client.contact_person} />}
+          {client.fiscal_address && <Row k="Dirección fiscal" v={client.fiscal_address} />}
+          {client.source && <Row k="Canal" v={client.source} />}
+
+          {/* CIF/NIF separado al final, como dato técnico */}
+          <div className="pt-2.5 mt-1 border-t border-ink-200 grid grid-cols-2 gap-x-3 gap-y-1.5">
+            <Row k="CIF/NIF" v={client.tax_id ?? "—"} />
+            {client.client_type && (
+              <Row k="Tipo" v={client.client_type === "company" ? "Empresa" : "Individual"} />
+            )}
+          </div>
+
           {client.notes && (
-            <div className="pt-2 border-t border-ink-100">
-              <p className="text-[11px] uppercase tracking-wider text-ink-500 mb-1">Notas</p>
+            <div className="pt-2.5 border-t border-ink-200">
+              <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1">Notas</p>
               <p className="text-[13px] text-ink-700 whitespace-pre-wrap">{client.notes}</p>
             </div>
           )}
@@ -128,9 +136,9 @@ export function ClientEditPanel({ client, coworkings }: { client: Client; cowork
 
 function Row({ k, v }: { k: string; v: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between text-[13px]">
-      <span className="text-ink-500">{k}</span>
-      <span className="text-ink-900 truncate max-w-[60%] text-right">{v}</span>
+    <div className="min-w-0">
+      <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500">{k}</p>
+      <p className="text-[13px] text-ink-900 truncate">{v}</p>
     </div>
   );
 }
