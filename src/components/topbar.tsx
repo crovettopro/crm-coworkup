@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
-import { Building2, ChevronDown } from "lucide-react";
+import { Bell, ChevronDown, Plus, Search } from "lucide-react";
 import type { Coworking } from "@/lib/types";
 
 const COOKIE_KEY = "active_cw";
@@ -11,6 +11,39 @@ function setCookie(name: string, value: string, days = 30) {
   if (typeof document === "undefined") return;
   const maxAge = days * 24 * 60 * 60;
   document.cookie = `${name}=${encodeURIComponent(value)}; path=/; max-age=${maxAge}; samesite=lax`;
+}
+
+const PAGE_TITLES: Record<string, string[]> = {
+  "/dashboard":     ["Dashboard"],
+  "/clients":       ["Operativa", "Clientes"],
+  "/subscriptions": ["Operativa", "Suscripciones"],
+  "/renewals":      ["Operativa", "Vencimientos"],
+  "/calendar":      ["Operativa", "Calendario"],
+  "/incidents":     ["Operativa", "Incidencias"],
+  "/payments":      ["Finanzas", "Pagos"],
+  "/invoices":      ["Finanzas", "Facturas"],
+  "/cash":          ["Finanzas", "Control efectivo"],
+  "/churn":         ["Finanzas", "Altas y bajas"],
+  "/extras":        ["Espacio", "Monitores y taquillas"],
+  "/settings":      ["Espacio", "Configuración"],
+  "/import":        ["Espacio", "Importar CSV"],
+  "/occupancy":     ["Operativa", "Ocupación"],
+};
+
+function crumbsFor(pathname: string): string[] {
+  if (pathname === "/" || pathname.startsWith("/dashboard")) return ["Dashboard"];
+  // /clients/[id], /clients/new, etc.
+  for (const base of Object.keys(PAGE_TITLES)) {
+    if (pathname === base || pathname.startsWith(base + "/")) {
+      const root = PAGE_TITLES[base];
+      if (pathname === base) return root;
+      // Sub-paths: append "Detalle" o "Nuevo"
+      const tail = pathname.slice(base.length + 1);
+      if (tail === "new") return [...root, "Nuevo"];
+      return [...root, "Detalle"];
+    }
+  }
+  return ["Cowork Up"];
 }
 
 export function Topbar({
@@ -27,9 +60,11 @@ export function Topbar({
   const router = useRouter();
   const pathname = usePathname();
   const params = useSearchParams();
+  const [open, setOpen] = useState(false);
 
   // "Todos los coworkings" only allowed in Dashboard
-  const allowAll = pathname === "/dashboard" || pathname === "/" || pathname.startsWith("/dashboard/");
+  const allowAll =
+    pathname === "/dashboard" || pathname === "/" || pathname.startsWith("/dashboard/");
 
   // Auto-fix: si el cookie dice "all" y no estamos en Dashboard, pasar al primer coworking
   useEffect(() => {
@@ -39,8 +74,11 @@ export function Topbar({
     }
   }, [allowAll, canSelectAll, currentValue, coworkings, router]);
 
+  const crumbs = useMemo(() => crumbsFor(pathname), [pathname]);
+
   function setCw(value: string) {
     setCookie(COOKIE_KEY, value);
+    setOpen(false);
     const next = new URLSearchParams(params.toString());
     next.delete("cw");
     const qs = next.toString();
@@ -48,39 +86,107 @@ export function Topbar({
     router.refresh();
   }
 
-  // Worker / manager → fixed coworking, no selector
-  if (!canSelectAll) {
-    const cw = coworkings.find((c) => c.id === fixedCw) ?? coworkings[0];
-    return (
-      <div className="flex h-14 items-center justify-between border-b border-ink-100 bg-white px-6">
-        <div className="flex items-center gap-2 text-[13px]">
-          <Building2 className="h-4 w-4 text-ink-400" />
-          <span className="font-medium text-ink-900">{cw?.name ?? "—"}</span>
-        </div>
-      </div>
-    );
-  }
+  const allLabel = "Todos los coworkings";
+  const cw = coworkings.find((c) => c.id === currentValue);
+  const cwLabel = !canSelectAll
+    ? coworkings.find((c) => c.id === fixedCw)?.name ?? coworkings[0]?.name ?? "—"
+    : currentValue === "all" && allowAll
+    ? allLabel
+    : cw?.name ?? coworkings[0]?.name ?? "—";
 
-  // Admin con selector
   return (
-    <div className="flex h-14 items-center justify-between border-b border-ink-100 bg-white px-6">
-      <div className="relative">
-        <select
-          value={allowAll ? currentValue : (currentValue === "all" ? coworkings[0]?.id ?? "" : currentValue)}
-          onChange={(e) => setCw(e.target.value)}
-          className="appearance-none rounded-lg border border-ink-200 bg-white pl-9 pr-9 h-9 text-[13px] font-medium text-ink-900 hover:border-ink-300 focus:outline-none focus:ring-2 focus:ring-ink-100"
-        >
-          {allowAll && <option value="all">Todos los coworkings</option>}
-          {coworkings.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-        </select>
-        <Building2 className="pointer-events-none absolute left-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
-        <ChevronDown className="pointer-events-none absolute right-2.5 top-1/2 h-4 w-4 -translate-y-1/2 text-ink-400" />
+    <div className="sticky top-0 z-10 flex h-12 items-center gap-3.5 border-b border-ink-200 bg-white px-6">
+      {/* Breadcrumbs */}
+      <div className="flex items-center gap-1.5 text-[13px] text-ink-500">
+        {crumbs.map((c, i) => (
+          <span key={i} className="flex items-center gap-1.5">
+            {i > 0 && <span className="text-ink-300">/</span>}
+            <span className={i === crumbs.length - 1 ? "text-ink-900 font-medium" : "text-ink-500"}>
+              {c}
+            </span>
+          </span>
+        ))}
       </div>
-      {!allowAll && (
-        <p className="text-[11px] text-ink-500">La vista global está disponible solo en el Dashboard</p>
-      )}
+
+      <div className="flex-1" />
+
+      {/* Search (cosmetic placeholder) */}
+      <div className="hidden md:flex items-center gap-2 h-[30px] px-2.5 rounded-md bg-ink-100 text-[12.5px] text-ink-500 cursor-pointer hover:bg-ink-200 min-w-[220px]">
+        <Search className="h-3.5 w-3.5" />
+        <span>Buscar clientes, pagos…</span>
+        <span className="ml-auto font-mono text-[10.5px] text-ink-500 bg-white border border-ink-200 px-1.5 py-px rounded">⌘K</span>
+      </div>
+
+      {/* CW selector */}
+      <div className="relative">
+        {canSelectAll ? (
+          <>
+            <button
+              type="button"
+              onClick={() => setOpen((v) => !v)}
+              className="flex items-center gap-2 h-[30px] px-2.5 rounded-md bg-white border border-ink-200 text-[12.5px] text-ink-800 hover:border-ink-300 hover:bg-[#f5f5f5]"
+            >
+              <span className="h-1.5 w-1.5 rounded-full bg-brand-400" />
+              <span>{cwLabel}</span>
+              <ChevronDown className="h-3.5 w-3.5" />
+            </button>
+            {open && (
+              <>
+                <div className="fixed inset-0 z-10" onClick={() => setOpen(false)} />
+                <div className="absolute right-0 top-9 z-20 w-56 rounded-md border border-ink-200 bg-white shadow-overlay py-1">
+                  {allowAll && (
+                    <button
+                      onClick={() => setCw("all")}
+                      className={
+                        "w-full text-left px-3 py-1.5 text-[13px] hover:bg-ink-50 " +
+                        (currentValue === "all" ? "bg-ink-50 text-ink-950 font-medium" : "text-ink-700")
+                      }
+                    >
+                      {allLabel}
+                    </button>
+                  )}
+                  {coworkings.map((c) => (
+                    <button
+                      key={c.id}
+                      onClick={() => setCw(c.id)}
+                      className={
+                        "w-full text-left px-3 py-1.5 text-[13px] hover:bg-ink-50 " +
+                        (currentValue === c.id ? "bg-ink-50 text-ink-950 font-medium" : "text-ink-700")
+                      }
+                    >
+                      {c.name}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </>
+        ) : (
+          <div className="flex items-center gap-2 h-[30px] px-2.5 rounded-md bg-white border border-ink-200 text-[12.5px] text-ink-800">
+            <span className="h-1.5 w-1.5 rounded-full bg-brand-400" />
+            <span>{cwLabel}</span>
+          </div>
+        )}
+      </div>
+
+      {/* Notifications */}
+      <button
+        type="button"
+        title="Notificaciones"
+        className="relative grid place-items-center h-[30px] w-[30px] rounded-md bg-white border border-ink-200 text-ink-600 hover:border-ink-300 hover:text-ink-900 hover:bg-[#f5f5f5]"
+      >
+        <Bell className="h-3.5 w-3.5" />
+        <span className="absolute top-1.5 right-1.5 h-1.5 w-1.5 rounded-full bg-brand-500 ring-[1.5px] ring-white" />
+      </button>
+
+      {/* Quick action */}
+      <button
+        type="button"
+        title="Nuevo"
+        className="inline-flex items-center gap-1.5 h-[30px] px-2.5 rounded-md bg-ink-950 text-white text-[12.5px] font-medium hover:bg-ink-800"
+      >
+        <Plus className="h-3.5 w-3.5" /> Nuevo
+      </button>
     </div>
   );
 }

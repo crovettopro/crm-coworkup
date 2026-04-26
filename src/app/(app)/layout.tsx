@@ -29,8 +29,8 @@ export default async function AppLayout({
           fixedCw={profile.role === "super_admin" ? null : profile.coworking_id}
           currentValue={activeCw}
         />
-        <main className="flex-1 overflow-y-auto px-6 py-7 lg:px-10">
-          <div className="mx-auto max-w-[1280px]">{children}</div>
+        <main className="flex-1 overflow-y-auto px-7 py-6 pb-16">
+          <div className="mx-auto max-w-[1480px]">{children}</div>
         </main>
       </div>
     </div>
