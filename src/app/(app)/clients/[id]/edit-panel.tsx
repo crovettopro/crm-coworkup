@@ -85,8 +85,8 @@ export function ClientEditPanel({ client, coworkings }: { client: Client; cowork
           <X className="h-3 w-3" /> Cancelar
         </button>
       </CardHeader>
-      <CardBody className="pt-0">
-        <form onSubmit={handleSave} className="space-y-3">
+      <CardBody className="pt-5">
+        <form onSubmit={handleSave} className="space-y-4">
           <Field label="Nombre"><Input name="name" defaultValue={client.name} required /></Field>
           {client.client_type === "company" && (
             <Field label="Empresa"><Input name="company_name" defaultValue={client.company_name ?? ""} /></Field>
