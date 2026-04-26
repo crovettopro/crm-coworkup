@@ -4,7 +4,6 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody } from "@/components/ui/card";
 import { Input, Select, Textarea, Field } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { ChevronLeft, ChevronRight, Plus, Sparkles, X, Trash2 } from "lucide-react";
@@ -126,16 +125,12 @@ export function CalendarBoard({
     <>
       {/* Toolbar */}
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <button onClick={() => navigate(-1)} className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-ink-200 bg-white hover:bg-ink-50">
-            <ChevronLeft className="h-4 w-4" />
-          </button>
-          <h2 className="font-display text-[18px] font-semibold text-ink-900 capitalize min-w-[180px] text-center">
+        <div className="flex items-center gap-1.5">
+          <Button variant="outline" size="sm" onClick={() => navigate(-1)} className="!px-2"><ChevronLeft className="h-3.5 w-3.5" /></Button>
+          <h2 className="text-[15px] font-semibold text-ink-950 capitalize min-w-[140px] text-center tracking-tight">
             {MONTH_LABELS[monthIdx]} {year}
           </h2>
-          <button onClick={() => navigate(1)} className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-ink-200 bg-white hover:bg-ink-50">
-            <ChevronRight className="h-4 w-4" />
-          </button>
+          <Button variant="outline" size="sm" onClick={() => navigate(1)} className="!px-2"><ChevronRight className="h-3.5 w-3.5" /></Button>
           <Button variant="outline" size="sm" onClick={goToday}>Hoy</Button>
         </div>
 
@@ -151,61 +146,101 @@ export function CalendarBoard({
         )}
       </div>
 
-      {/* Grid */}
-      <Card>
-        <CardBody className="p-0 overflow-hidden">
-          <div className="grid grid-cols-7 border-b border-ink-100 text-[11px] uppercase tracking-wider text-ink-500">
-            {WEEKDAYS.map((d) => (
-              <div key={d} className="px-3 py-2.5 text-center font-medium">{d}</div>
-            ))}
-          </div>
-          <div className="grid grid-cols-7 grid-rows-6">
-            {gridDays.map((d, i) => {
-              const isCurrentMonth = d.getMonth() === monthIdx;
-              const isToday = isoLocal(d) === isoLocal(new Date());
-              const dayEvents = eventsByDay.get(isoLocal(d)) ?? [];
-              return (
-                <button
-                  key={i}
-                  onClick={() => { setSelectedDay(d); setCreating(false); }}
-                  className={cn(
-                    "min-h-[110px] p-2 text-left border-r border-b border-ink-100 hover:bg-ink-50/50 transition-colors flex flex-col",
-                    !isCurrentMonth && "bg-ink-50/40 text-ink-400",
-                    (i + 1) % 7 === 0 && "border-r-0",
-                    i >= 35 && "border-b-0",
-                  )}
-                >
+      {/* Grid 7-col, gap 1px sobre fondo ink-200 para crear líneas finas */}
+      <div className="rounded-md border border-ink-200 overflow-hidden">
+        <div className="grid grid-cols-7 bg-ink-100">
+          {WEEKDAYS.map((d) => (
+            <div
+              key={d}
+              className="px-2.5 py-2 text-center text-[10.5px] uppercase tracking-[0.05em] font-medium text-ink-500"
+            >
+              {d}
+            </div>
+          ))}
+        </div>
+        <div className="grid grid-cols-7 gap-px bg-ink-200">
+          {gridDays.map((d, i) => {
+            const isCurrentMonth = d.getMonth() === monthIdx;
+            const isToday = isoLocal(d) === isoLocal(new Date());
+            const dayEvents = eventsByDay.get(isoLocal(d)) ?? [];
+            return (
+              <button
+                key={i}
+                onClick={() => { setSelectedDay(d); setCreating(false); }}
+                className={cn(
+                  "min-h-[96px] p-2 text-left transition-colors flex flex-col",
+                  isCurrentMonth ? "bg-white hover:bg-ink-50/60" : "bg-ink-100 text-ink-400 hover:bg-ink-100/80",
+                )}
+              >
+                {isToday ? (
+                  <span className="inline-grid place-items-center text-[12px] font-semibold w-[22px] h-[22px] rounded-[5px] bg-ink-950 text-brand-400">
+                    {d.getDate()}
+                  </span>
+                ) : (
                   <span className={cn(
-                    "inline-flex items-center justify-center text-[12px] font-semibold w-6 h-6 rounded-full",
-                    isToday ? "bg-ink-900 text-white" : isCurrentMonth ? "text-ink-900" : "text-ink-400"
+                    "inline-flex items-center text-[12px] font-medium px-0.5",
+                    isCurrentMonth ? "text-ink-700" : "text-ink-300",
                   )}>
                     {d.getDate()}
                   </span>
-                  <div className="mt-1 space-y-1 overflow-hidden flex-1">
-                    {dayEvents.slice(0, 3).map((e) => (
+                )}
+                <div className="mt-1.5 space-y-1 overflow-hidden flex-1">
+                  {dayEvents.slice(0, 3).map((e) => {
+                    const isHoliday = e.event_type === "holiday";
+                    const customColor = e.color ?? null;
+                    if (isHoliday) {
+                      return (
+                        <div
+                          key={e.id}
+                          className="truncate rounded px-1.5 py-0.5 text-[11px] font-medium bg-red-50 text-red-700"
+                          title={e.title}
+                        >
+                          {e.title}
+                        </div>
+                      );
+                    }
+                    if (isToday && !customColor) {
+                      return (
+                        <div
+                          key={e.id}
+                          className="truncate rounded px-1.5 py-0.5 text-[11px] font-medium bg-brand-100 text-brand-700"
+                          title={e.title}
+                        >
+                          {e.title}
+                        </div>
+                      );
+                    }
+                    return (
                       <div
                         key={e.id}
-                        className="truncate rounded px-1.5 py-0.5 text-[10.5px] font-medium border-l-2"
-                        style={{
-                          background: `${eventColor(e.event_type, e.color)}15`,
-                          color: eventColor(e.event_type, e.color),
-                          borderLeftColor: eventColor(e.event_type, e.color),
-                        }}
+                        className="truncate rounded px-1.5 py-0.5 text-[11px]"
+                        style={
+                          customColor
+                            ? {
+                                background: `${customColor}15`,
+                                color: customColor,
+                              }
+                            : undefined
+                        }
                         title={e.title}
                       >
-                        {e.title}
+                        {!customColor ? (
+                          <span className="text-ink-800">{e.title}</span>
+                        ) : (
+                          e.title
+                        )}
                       </div>
-                    ))}
-                    {dayEvents.length > 3 && (
-                      <div className="text-[10px] text-ink-500">+{dayEvents.length - 3} más</div>
-                    )}
-                  </div>
-                </button>
-              );
-            })}
-          </div>
-        </CardBody>
-      </Card>
+                    );
+                  })}
+                  {dayEvents.length > 3 && (
+                    <div className="text-[10px] text-ink-500">+{dayEvents.length - 3} más</div>
+                  )}
+                </div>
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* Day events drawer */}
       {selectedDay && !creating && (
