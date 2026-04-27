@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,8 +37,9 @@ const SLOT_MIN = 15;
 const SLOT_PX = 24;
 const SLOTS_PER_HOUR = 60 / SLOT_MIN;
 const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR;
-const ROOM_COL_PX = 160;
-const ROW_PX = 56;
+const ROOM_COL_PX = 168;
+const ROW_PX = 64;
+const HEADER_PX = 38;
 
 function fmtTime(d: Date) {
   return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
@@ -59,11 +60,39 @@ function slotIndexFromDate(d: Date) {
 function endSlotFromDate(d: Date) {
   return Math.ceil((d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR + d.getMinutes() / SLOT_MIN);
 }
+function initials(name?: string | null) {
+  if (!name) return "·";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "·";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
 
-const SOURCE_TINT: Record<string, { bg: string; ring: string; text: string }> = {
-  client: { bg: "bg-brand-100/80", ring: "ring-brand-300", text: "text-brand-900" },
-  staff: { bg: "bg-emerald-100/80", ring: "ring-emerald-300", text: "text-emerald-900" },
-  walk_in: { bg: "bg-amber-100/80", ring: "ring-amber-300", text: "text-amber-900" },
+const SOURCE_TINT: Record<
+  string,
+  { bg: string; ring: string; text: string; chipBg: string; chipText: string }
+> = {
+  client: {
+    bg: "bg-brand-100/90",
+    ring: "ring-brand-300",
+    text: "text-brand-950",
+    chipBg: "bg-brand-500",
+    chipText: "text-white",
+  },
+  staff: {
+    bg: "bg-emerald-100/90",
+    ring: "ring-emerald-300",
+    text: "text-emerald-950",
+    chipBg: "bg-emerald-500",
+    chipText: "text-white",
+  },
+  walk_in: {
+    bg: "bg-amber-100/90",
+    ring: "ring-amber-300",
+    text: "text-amber-950",
+    chipBg: "bg-amber-500",
+    chipText: "text-white",
+  },
 };
 
 export function RoomsBoard({
@@ -86,6 +115,17 @@ export function RoomsBoard({
     | null
   >(null);
 
+  const todayISO = isoDate(new Date());
+  const isToday = date === todayISO;
+
+  // Live current-time line (only for today)
+  const [now, setNow] = useState<Date>(() => new Date());
+  useEffect(() => {
+    if (!isToday) return;
+    const t = setInterval(() => setNow(new Date()), 60000);
+    return () => clearInterval(t);
+  }, [isToday]);
+
   const headerSlots = useMemo(() => {
     const arr: { slot: number; isHour: boolean; label: string }[] = [];
     for (let s = 0; s < TOTAL_SLOTS; s++) {
@@ -97,6 +137,27 @@ export function RoomsBoard({
     return arr;
   }, []);
 
+  // Day stats
+  const stats = useMemo(() => {
+    const totalMin = bookings.reduce((acc, b) => {
+      const ms = new Date(b.end_at).getTime() - new Date(b.start_at).getTime();
+      return acc + ms / 60000;
+    }, 0);
+    const capacityMin = rooms.length * (DAY_END_HOUR - DAY_START_HOUR) * 60;
+    const utilization = capacityMin > 0 ? Math.round((totalMin / capacityMin) * 100) : 0;
+    const walkIns = bookings.filter((b) => b.source === "walk_in").length;
+    const clientBookings = bookings.filter((b) => b.source === "client").length;
+    const staffBookings = bookings.filter((b) => b.source === "staff").length;
+    return {
+      count: bookings.length,
+      hours: totalMin / 60,
+      utilization,
+      walkIns,
+      clientBookings,
+      staffBookings,
+    };
+  }, [bookings, rooms.length]);
+
   function goDay(offsetDays: number) {
     const d = new Date(date + "T12:00:00");
     d.setDate(d.getDate() + offsetDays);
@@ -105,18 +166,32 @@ export function RoomsBoard({
   function goDate(d: string) {
     router.push(`/rooms?date=${d}`);
   }
-  const todayISO = isoDate(new Date());
 
   function bookingTitle(b: Booking) {
     if (b.source === "walk_in") return b.walk_in_name || "Walk-in";
     if (b.clients?.company_name) return b.clients.company_name;
     return b.clients?.name || "Reserva";
   }
+  function bookingPersonName(b: Booking) {
+    if (b.source === "walk_in") return b.walk_in_name || "Walk-in";
+    return b.clients?.name || "—";
+  }
 
   const timelineWidth = TOTAL_SLOTS * SLOT_PX;
 
+  // Current-time x position
+  const nowX = useMemo(() => {
+    if (!isToday) return null;
+    const h = now.getHours();
+    if (h < DAY_START_HOUR || h >= DAY_END_HOUR) return null;
+    const slot =
+      (h - DAY_START_HOUR) * SLOTS_PER_HOUR + now.getMinutes() / SLOT_MIN;
+    return slot * SLOT_PX;
+  }, [isToday, now]);
+
   return (
     <div>
+      {/* Toolbar */}
       <div className="mb-3 flex flex-wrap items-center gap-2">
         <button
           className="inline-flex h-8 w-8 items-center justify-center rounded-md border border-ink-200 bg-white text-ink-700 hover:bg-ink-50"
@@ -161,39 +236,68 @@ export function RoomsBoard({
         </Button>
       </div>
 
+      {/* Stats strip */}
+      {rooms.length > 0 && (
+        <div className="mb-3 grid grid-cols-2 sm:grid-cols-4 gap-2">
+          <StatCard
+            label="Reservas"
+            value={String(stats.count)}
+            sub={`${stats.clientBookings} cliente · ${stats.staffBookings} staff · ${stats.walkIns} walk-in`}
+          />
+          <StatCard
+            label="Horas reservadas"
+            value={`${stats.hours.toFixed(stats.hours % 1 === 0 ? 0 : 1)}h`}
+            sub={`Sobre ${rooms.length * (DAY_END_HOUR - DAY_START_HOUR)}h disponibles`}
+          />
+          <StatCard
+            label="Ocupación"
+            value={`${stats.utilization}%`}
+            sub="del horario 08:00 – 22:00"
+            accent={stats.utilization >= 50 ? "ok" : undefined}
+          />
+          <StatCard
+            label="Salas activas"
+            value={String(rooms.length)}
+            sub={rooms.map((r) => r.name).join(" · ")}
+          />
+        </div>
+      )}
+
       {rooms.length === 0 ? (
         <div className="rounded-lg border border-dashed border-ink-300 bg-white px-6 py-12 text-center text-[13px] text-ink-500">
           No hay salas registradas para este coworking. Aplica la migration 0006 para crearlas.
         </div>
       ) : (
-        <div className="rounded-lg border border-ink-200 bg-white overflow-hidden">
+        <div className="rounded-xl border border-ink-200 bg-white overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
           <div className="flex">
             {/* Sticky room column */}
-            <div className="shrink-0 border-r border-ink-200 bg-white" style={{ width: ROOM_COL_PX }}>
-              {/* Header cell */}
+            <div
+              className="shrink-0 border-r border-ink-200 bg-white"
+              style={{ width: ROOM_COL_PX }}
+            >
               <div
                 className="border-b border-ink-200 bg-ink-50/60 px-3 flex items-center text-[10.5px] font-medium uppercase tracking-[0.06em] text-ink-500"
-                style={{ height: 36 }}
+                style={{ height: HEADER_PX }}
               >
                 Sala
               </div>
               {rooms.map((r) => (
                 <div
                   key={r.id}
-                  className="border-b border-ink-200 px-3 flex items-center gap-2"
+                  className="border-b border-ink-200 px-3 flex items-center gap-2.5 relative"
                   style={{ height: ROW_PX }}
                 >
                   <span
-                    className="inline-block h-3 w-3 rounded-full shrink-0"
+                    className="absolute left-0 top-0 bottom-0 w-1"
                     style={{ backgroundColor: r.color ?? "#6366f1" }}
                   />
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[13px] font-medium text-ink-950 leading-tight">
+                  <div className="min-w-0 flex-1 ml-1.5">
+                    <p className="truncate text-[13.5px] font-semibold text-ink-950 leading-tight">
                       {r.name}
                     </p>
                     {r.capacity ? (
                       <p className="text-[11px] text-ink-500 leading-tight mt-0.5">
-                        {r.capacity}p
+                        {r.capacity} personas
                       </p>
                     ) : null}
                   </div>
@@ -203,9 +307,12 @@ export function RoomsBoard({
 
             {/* Scrollable timeline */}
             <div className="flex-1 overflow-x-auto">
-              <div style={{ width: timelineWidth }}>
+              <div style={{ width: timelineWidth, position: "relative" }}>
                 {/* Time header */}
-                <div className="flex border-b border-ink-200 bg-ink-50/30" style={{ height: 36 }}>
+                <div
+                  className="flex border-b border-ink-200 bg-ink-50/30"
+                  style={{ height: HEADER_PX }}
+                >
                   {headerSlots.map((h) => (
                     <div
                       key={h.slot}
@@ -245,7 +352,7 @@ export function RoomsBoard({
                               }
                               style={{ width: SLOT_PX }}
                               className={
-                                "h-full shrink-0 transition-colors hover:bg-brand-50 " +
+                                "h-full shrink-0 transition-colors hover:bg-brand-50/70 " +
                                 (isHour ? "border-l border-ink-200" : "")
                               }
                               aria-label={`Reservar ${room.name}`}
@@ -258,7 +365,10 @@ export function RoomsBoard({
                       {items.map((b) => {
                         const start = new Date(b.start_at);
                         const end = new Date(b.end_at);
-                        const startSlot = Math.max(0, Math.min(TOTAL_SLOTS, slotIndexFromDate(start)));
+                        const startSlot = Math.max(
+                          0,
+                          Math.min(TOTAL_SLOTS, slotIndexFromDate(start)),
+                        );
                         const endSlot = Math.max(
                           startSlot + 1,
                           Math.min(TOTAL_SLOTS, endSlotFromDate(end)),
@@ -266,24 +376,45 @@ export function RoomsBoard({
                         const left = startSlot * SLOT_PX;
                         const width = (endSlot - startSlot) * SLOT_PX - 2;
                         const tint = SOURCE_TINT[b.source] ?? SOURCE_TINT.staff;
+                        const wide = width >= 96;
                         return (
                           <button
                             key={b.id}
                             onClick={() => setDialogState({ mode: "edit", booking: b })}
-                            style={{ left: left + 1, width, top: 4, bottom: 4 }}
+                            style={{ left: left + 1, width, top: 5, bottom: 5 }}
                             className={
-                              "absolute overflow-hidden rounded-md px-2 text-left text-[11.5px] font-medium ring-1 transition-shadow hover:shadow-md " +
+                              "absolute group overflow-hidden rounded-md text-left ring-1 transition-all hover:shadow-md hover:-translate-y-px flex items-center gap-1.5 px-1.5 " +
                               tint.bg +
                               " " +
                               tint.ring +
                               " " +
                               tint.text
                             }
-                            title={`${fmtTime(start)} → ${fmtTime(end)} · ${bookingTitle(b)}`}
+                            title={`${fmtTime(start)} → ${fmtTime(end)} · ${bookingTitle(
+                              b,
+                            )}`}
                           >
-                            <div className="truncate leading-tight">{bookingTitle(b)}</div>
-                            <div className="truncate text-[10.5px] opacity-75 leading-tight font-mono">
-                              {fmtTime(start)}–{fmtTime(end)}
+                            {wide && (
+                              <span
+                                className={
+                                  "shrink-0 grid place-items-center h-6 w-6 rounded-full text-[10px] font-bold " +
+                                  tint.chipBg +
+                                  " " +
+                                  tint.chipText
+                                }
+                              >
+                                {initials(bookingPersonName(b))}
+                              </span>
+                            )}
+                            <div className="flex-1 min-w-0">
+                              <div className="truncate text-[11.5px] font-semibold leading-tight">
+                                {bookingTitle(b)}
+                              </div>
+                              {wide && (
+                                <div className="truncate text-[10.5px] opacity-75 leading-tight font-mono">
+                                  {fmtTime(start)}–{fmtTime(end)}
+                                </div>
+                              )}
                             </div>
                           </button>
                         );
@@ -291,6 +422,17 @@ export function RoomsBoard({
                     </div>
                   );
                 })}
+
+                {/* Current-time vertical line */}
+                {nowX !== null && (
+                  <div
+                    className="pointer-events-none absolute top-0 bottom-0 z-10"
+                    style={{ left: nowX }}
+                  >
+                    <div className="h-full w-px bg-red-500/80 shadow-[0_0_4px_rgba(239,68,68,0.4)]" />
+                    <div className="absolute -top-1 -left-1 h-2 w-2 rounded-full bg-red-500" />
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -320,7 +462,44 @@ export function RoomsBoard({
   );
 }
 
-function Legend({ tone, label }: { tone: "brand" | "emerald" | "amber"; label: string }) {
+function StatCard({
+  label,
+  value,
+  sub,
+  accent,
+}: {
+  label: string;
+  value: string;
+  sub: string;
+  accent?: "ok";
+}) {
+  return (
+    <div className="rounded-lg border border-ink-200 bg-white px-3.5 py-2.5">
+      <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500">
+        {label}
+      </p>
+      <p
+        className={
+          "mt-0.5 text-[20px] font-semibold tracking-tight tabular " +
+          (accent === "ok" ? "text-emerald-700" : "text-ink-950")
+        }
+      >
+        {value}
+      </p>
+      <p className="mt-0.5 text-[11px] text-ink-500 truncate" title={sub}>
+        {sub}
+      </p>
+    </div>
+  );
+}
+
+function Legend({
+  tone,
+  label,
+}: {
+  tone: "brand" | "emerald" | "amber";
+  label: string;
+}) {
   const cls =
     tone === "brand"
       ? "bg-brand-400"
