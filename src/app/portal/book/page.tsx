@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function PortalBookPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string }>;
+  searchParams: Promise<{ date?: string; room?: string }>;
 }) {
   const params = await searchParams;
   const supabase = await createClient();
@@ -65,6 +65,11 @@ export default async function PortalBookPage({
         bookings={(bookings ?? []) as any}
         date={date}
         balance={balance}
+        initialRoomId={
+          params.room && (rooms ?? []).some((r) => r.id === params.room)
+            ? params.room
+            : undefined
+        }
       />
     </div>
   );

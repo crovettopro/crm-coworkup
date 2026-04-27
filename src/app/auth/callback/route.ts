@@ -4,7 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/portal";
+  const rawNext = searchParams.get("next") ?? "/portal";
+  // Open-redirect guard: only allow same-origin paths under /portal
+  const next = rawNext.startsWith("/portal") ? rawNext : "/portal";
 
   if (code) {
     const supabase = await createClient();

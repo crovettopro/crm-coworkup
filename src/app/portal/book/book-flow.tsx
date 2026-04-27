@@ -125,6 +125,7 @@ export function BookFlow({
   bookings,
   date,
   balance,
+  initialRoomId,
 }: {
   clientId: string;
   clientName: string;
@@ -133,9 +134,12 @@ export function BookFlow({
   bookings: Booking[];
   date: string;
   balance: Balance;
+  initialRoomId?: string;
 }) {
   const router = useRouter();
-  const [selectedRoom, setSelectedRoom] = useState<string>(rooms[0]?.id ?? "");
+  const [selectedRoom, setSelectedRoom] = useState<string>(
+    initialRoomId ?? rooms[0]?.id ?? "",
+  );
   const [pendingChunk, setPendingChunk] = useState<{
     start: number;
     end: number;
