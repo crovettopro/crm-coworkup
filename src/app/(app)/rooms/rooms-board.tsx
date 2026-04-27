@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ChevronLeft, ChevronRight, Plus } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, QrCode } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Seg, SegButton } from "@/components/ui/seg";
 import { BookingDialog } from "./booking-dialog";
@@ -226,6 +227,13 @@ export function RoomsBoard({
           <Legend tone="emerald" label="Staff" />
           <Legend tone="amber" label="Walk-in" />
         </div>
+        <Link
+          href="/rooms/qr"
+          className="inline-flex h-8 items-center gap-1.5 rounded-md border border-ink-200 bg-white px-3 text-[12.5px] font-medium text-ink-700 hover:bg-ink-50"
+          title="Imprimir QRs para puerta de cada sala"
+        >
+          <QrCode className="h-3.5 w-3.5" /> QRs
+        </Link>
         <Button
           size="sm"
           variant="primary"

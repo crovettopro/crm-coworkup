@@ -38,6 +38,12 @@ export async function updateSession(request: NextRequest) {
   if (!user && !isPublic) {
     const redirect = url.clone();
     redirect.pathname = isPortal ? "/portal/login" : "/login";
+    redirect.search = "";
+    if (isPortal) {
+      // Preserve deep-link target (e.g. /portal/book?room=xxx) so the magic
+      // link can land back on it after auth.
+      redirect.searchParams.set("next", path + url.search);
+    }
     return NextResponse.redirect(redirect);
   }
 
@@ -58,8 +64,20 @@ export async function updateSession(request: NextRequest) {
         return NextResponse.redirect(redirect);
       }
       if (isPortalLogin) {
+        // Honor ?next= so QR deep-links land where they should
+        const nextRaw = url.searchParams.get("next");
         const redirect = url.clone();
+        redirect.search = "";
         redirect.pathname = "/portal";
+        if (nextRaw && nextRaw.startsWith("/portal")) {
+          try {
+            const nextUrl = new URL(nextRaw, url.origin);
+            redirect.pathname = nextUrl.pathname;
+            redirect.search = nextUrl.search;
+          } catch {
+            /* ignore malformed */
+          }
+        }
         return NextResponse.redirect(redirect);
       }
     } else {
