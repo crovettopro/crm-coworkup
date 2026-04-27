@@ -11,7 +11,7 @@ import { Pagination } from "@/components/ui/pagination";
 import { Seg, SegLink } from "@/components/ui/seg";
 import { InvoiceRowActions } from "./invoice-actions";
 import { formatCurrency, formatDate, monthRange, currentMonthString } from "@/lib/utils";
-import { Plus, Search, AlertTriangle } from "lucide-react";
+import { Search, AlertTriangle } from "lucide-react";
 
 export const revalidate = 30;
 const PAGE_SIZE = 25;
@@ -81,7 +81,7 @@ export default async function InvoicesPage({
 
   let listQ = supabase
     .from("invoices")
-    .select("id, invoice_number, client_id, month, total_amount, status, issue_date, clients(name)", { count: "exact" });
+    .select("id, invoice_number, client_id, coworking_id, month, total_amount, concept, status, issue_date, clients(name)", { count: "exact" });
   listQ = applyFilters(listQ)
     .order("status", { ascending: true })
     .order("issue_date", { ascending: false, nullsFirst: false })
@@ -175,13 +175,6 @@ export default async function InvoicesPage({
       <PageHeader
         title="Facturas"
         subtitle={`${totalCount} ${totalCount === 1 ? "factura" : "facturas"}${totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}`}
-        actions={
-          <Link href="/invoices/new">
-            <Button size="sm" variant="primary">
-              <Plus className="h-3.5 w-3.5" /> Registrar factura
-            </Button>
-          </Link>
-        }
       />
 
       <KpiGrid className="mb-4">

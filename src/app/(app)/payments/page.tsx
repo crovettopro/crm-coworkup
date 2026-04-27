@@ -12,7 +12,7 @@ import { Seg, SegLink } from "@/components/ui/seg";
 import { PAYMENT_STATUS_LABEL, PAYMENT_METHOD_LABEL } from "@/lib/types";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { PaymentRowActions } from "./payment-actions";
-import { Plus, Search, AlertTriangle, Wallet, Check } from "lucide-react";
+import { Search, AlertTriangle, Wallet, Check } from "lucide-react";
 
 export const revalidate = 30;
 const PAGE_SIZE = 25;
@@ -184,13 +184,6 @@ export default async function PaymentsPage({
       <PageHeader
         title="Pagos"
         subtitle={`${totalCount} ${totalCount === 1 ? "pago" : "pagos"} · ${rangeLabel}${totalPages > 1 ? ` · página ${page} de ${totalPages}` : ""}`}
-        actions={
-          <Link href="/payments/new">
-            <Button size="sm" variant="primary">
-              <Plus className="h-3.5 w-3.5" /> Pago manual
-            </Button>
-          </Link>
-        }
       />
 
       <KpiGrid className="mb-4">
