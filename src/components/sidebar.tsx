@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname, useRouter } from "next/navigation";
 import {
   LayoutDashboard, Users, ListChecks, CreditCard, FileText,
-  Boxes, UserMinus, Wrench, Settings, LogOut, CalendarDays, AlarmClock, Wallet,
+  Boxes, UserMinus, Wrench, Settings, LogOut, CalendarDays, AlarmClock, Wallet, DoorOpen,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase/client";
@@ -26,6 +26,7 @@ const NAV: NavGroup[] = [
     items: [
       { href: "/clients",       label: "Clientes",      icon: Users },
       { href: "/subscriptions", label: "Suscripciones", icon: ListChecks },
+      { href: "/rooms",         label: "Salas",         icon: DoorOpen },
       { href: "/renewals",      label: "Vencimientos",  icon: AlarmClock },
       { href: "/calendar",      label: "Calendario",    icon: CalendarDays },
       { href: "/incidents",     label: "Incidencias",   icon: Wrench },

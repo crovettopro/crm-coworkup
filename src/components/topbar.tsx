@@ -20,6 +20,7 @@ const PAGE_TITLES: Record<string, string[]> = {
   "/dashboard":     ["Dashboard"],
   "/clients":       ["Operativa", "Clientes"],
   "/subscriptions": ["Operativa", "Suscripciones"],
+  "/rooms":         ["Operativa", "Salas"],
   "/renewals":      ["Operativa", "Vencimientos"],
   "/calendar":      ["Operativa", "Calendario"],
   "/incidents":     ["Operativa", "Incidencias"],

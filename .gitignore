@@ -24,3 +24,6 @@ import_data/*.sql
 # Claude/Anthropic local files
 .claude
 .vercel
+
+# Supabase CLI temp files
+supabase/.temp/

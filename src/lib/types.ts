@@ -1,10 +1,10 @@
-export type UserRole = "super_admin" | "manager" | "staff";
+export type UserRole = "super_admin" | "manager" | "staff" | "client";
 export type ClientType = "individual" | "company";
 export type ClientStatus = "active" | "inactive" | "pending" | "overdue" | "paused";
 export type PlanType =
   | "fixed" | "flexible" | "hours_20" | "hours_10" | "evening" | "office"
   | "company_custom" | "day_pass" | "half_day_pass" | "week_pass"
-  | "coffee" | "misc";
+  | "coffee" | "misc" | "virtual_office";
 export type SubscriptionStatus = "active" | "cancelled" | "paused" | "finished";
 export type DiscountType = "percent" | "fixed";
 export type PaymentStatus = "pending" | "paid" | "partial" | "overdue" | "cancelled";
@@ -188,7 +188,40 @@ export const ROLE_LABEL: Record<UserRole, string> = {
   super_admin: "Super Admin",
   manager: "Manager",
   staff: "Staff",
+  client: "Cliente",
 };
+
+export type RoomBookingSource = "client" | "staff" | "walk_in";
+export type RoomBookingStatus = "confirmed" | "cancelled";
+
+export interface MeetingRoom {
+  id: string;
+  coworking_id: string;
+  name: string;
+  capacity: number | null;
+  color: string | null;
+  sort_order: number | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export interface RoomBooking {
+  id: string;
+  room_id: string;
+  coworking_id: string;
+  client_id: string | null;
+  walk_in_name: string | null;
+  walk_in_email: string | null;
+  walk_in_phone: string | null;
+  start_at: string;
+  end_at: string;
+  status: RoomBookingStatus;
+  source: RoomBookingSource;
+  notes: string | null;
+  created_by: string | null;
+  created_at: string;
+  cancelled_at: string | null;
+}
 
 export const CLIENT_STATUS_LABEL: Record<ClientStatus, string> = {
   active: "Activo",
@@ -228,6 +261,7 @@ export const PLAN_TYPE_LABEL: Record<PlanType, string> = {
   week_pass: "Pase semanal",
   coffee: "Café",
   misc: "Otro / Ad-hoc",
+  virtual_office: "Oficina Virtual",
 };
 
 export const EXTRA_TYPE_LABEL: Record<ExtraType, string> = {
