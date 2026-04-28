@@ -1,7 +1,6 @@
 import Link from "next/link";
 import Image from "next/image";
-import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getPortalCookie } from "@/lib/portal-cookie";
 import { PortalNav } from "./portal-nav";
 import { PortalLogout } from "./portal-logout";
 
@@ -10,31 +9,7 @@ export default async function PortalLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-
-  // Si no hay user, deja que el middleware/login maneje. La página /portal/login
-  // tiene su propio diseño y este layout no le aplica.
-  if (!user) {
-    redirect("/portal/login");
-  }
-
-  const { data: profile } = await supabase
-    .from("profiles")
-    .select("name, email, role")
-    .eq("id", user.id)
-    .single();
-
-  if (!profile || profile.role !== "client") {
-    // Si por alguna razón un staff llega aquí, fuera al CRM
-    redirect("/dashboard");
-  }
-
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, name, company_name, coworking_id, coworkings(name)")
-    .eq("auth_user_id", user.id)
-    .single();
+  const identity = await getPortalCookie();
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-brand-50/40 via-white to-ink-50/60">
@@ -52,17 +27,28 @@ export default async function PortalLayout({
           </Link>
           <PortalNav />
           <div className="ml-auto flex items-center gap-3">
-            <div className="hidden sm:block text-right leading-tight">
-              <p className="text-[12.5px] font-medium text-ink-950">
-                {client?.name ?? profile.name ?? profile.email}
-              </p>
-              {(client as any)?.coworkings?.name && (
-                <p className="text-[10.5px] text-ink-500">
-                  {(client as any).coworkings.name}
-                </p>
-              )}
-            </div>
-            <PortalLogout />
+            {identity ? (
+              <>
+                <div className="hidden sm:block text-right leading-tight">
+                  <p className="text-[12.5px] font-medium text-ink-950">
+                    {identity.name}
+                  </p>
+                  {identity.coworkingName && (
+                    <p className="text-[10.5px] text-ink-500">
+                      {identity.coworkingName}
+                    </p>
+                  )}
+                </div>
+                <PortalLogout />
+              </>
+            ) : (
+              <Link
+                href="/portal/login"
+                className="text-[12px] font-medium text-ink-700 hover:text-ink-950 hover:underline"
+              >
+                Identifícate
+              </Link>
+            )}
           </div>
         </div>
       </header>

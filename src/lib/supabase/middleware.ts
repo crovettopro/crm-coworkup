@@ -16,82 +16,60 @@ export async function updateSession(request: NextRequest) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value));
           response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) =>
-            response.cookies.set(name, value, options)
+            response.cookies.set(name, value, options),
           );
         },
       },
-    }
+    },
   );
-
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
   const url = request.nextUrl;
   const path = url.pathname;
   const isLogin = path.startsWith("/login");
-  const isPortalLogin = path.startsWith("/portal/login");
   const isAuthRoute = path.startsWith("/auth");
   const isPortal = path === "/portal" || path.startsWith("/portal/");
-  const isPublic = isLogin || isAuthRoute || isPortalLogin;
+  const isApiPortal = path.startsWith("/api/portal/");
 
-  if (!user && !isPublic) {
+  // El portal del cliente y sus APIs son públicos. La identificación se hace
+  // con cookie firmada (PORTAL_COOKIE_SECRET) gestionada en /api/portal/*.
+  if (isPortal || isApiPortal || isAuthRoute) {
+    return response;
+  }
+
+  // CRM: requerir Supabase Auth
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user && !isLogin) {
     const redirect = url.clone();
-    redirect.pathname = isPortal ? "/portal/login" : "/login";
+    redirect.pathname = "/login";
     redirect.search = "";
-    if (isPortal) {
-      // Preserve deep-link target (e.g. /portal/book?room=xxx) so the magic
-      // link can land back on it after auth.
-      redirect.searchParams.set("next", path + url.search);
-    }
     return NextResponse.redirect(redirect);
   }
 
   if (user) {
-    let role: string | null = null;
     const { data: profile } = await supabase
       .from("profiles")
       .select("role")
       .eq("id", user.id)
       .single();
-    role = (profile as any)?.role ?? null;
+    const role = (profile as any)?.role ?? null;
 
     if (role === "client") {
-      // Cliente: solo /portal/*
-      if (!isPortal && !isPortalLogin && !isAuthRoute) {
-        const redirect = url.clone();
-        redirect.pathname = "/portal";
-        return NextResponse.redirect(redirect);
-      }
-      if (isPortalLogin) {
-        // Honor ?next= so QR deep-links land where they should
-        const nextRaw = url.searchParams.get("next");
-        const redirect = url.clone();
-        redirect.search = "";
-        redirect.pathname = "/portal";
-        if (nextRaw && nextRaw.startsWith("/portal")) {
-          try {
-            const nextUrl = new URL(nextRaw, url.origin);
-            redirect.pathname = nextUrl.pathname;
-            redirect.search = nextUrl.search;
-          } catch {
-            /* ignore malformed */
-          }
-        }
-        return NextResponse.redirect(redirect);
-      }
-    } else {
-      // Staff/admin: si entra al portal, fuera al dashboard
-      if (isPortal) {
-        const redirect = url.clone();
-        redirect.pathname = "/dashboard";
-        return NextResponse.redirect(redirect);
-      }
-      if (isLogin) {
-        const redirect = url.clone();
-        redirect.pathname = "/dashboard";
-        return NextResponse.redirect(redirect);
-      }
+      // Si por algo un cliente acabó con sesión Supabase (legacy magic link),
+      // lo mandamos al portal público.
+      const redirect = url.clone();
+      redirect.pathname = "/portal";
+      redirect.search = "";
+      return NextResponse.redirect(redirect);
+    }
+
+    if (isLogin) {
+      const redirect = url.clone();
+      redirect.pathname = "/dashboard";
+      redirect.search = "";
+      return NextResponse.redirect(redirect);
     }
   }
 

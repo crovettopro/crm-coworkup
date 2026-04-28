@@ -1,5 +1,6 @@
-import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
+import { createClient } from "@/lib/supabase/server";
+import { getPortalCookie } from "@/lib/portal-cookie";
 import { BookFlow } from "./book-flow";
 
 export const dynamic = "force-dynamic";
@@ -10,64 +11,75 @@ export default async function PortalBookPage({
   searchParams: Promise<{ date?: string; room?: string }>;
 }) {
   const params = await searchParams;
+  const cookie = await getPortalCookie();
   const supabase = await createClient();
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) redirect("/portal/login");
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, name, coworking_id")
-    .eq("auth_user_id", user.id)
-    .single();
-  if (!client) redirect("/portal");
+  // 1) Determinar coworking. Si llega ?room=, usamos su coworking. Si no,
+  //    usamos el de la cookie. Si no hay ninguno, mandamos a identificarse.
+  let coworkingId: string | null = null;
+  let initialRoomId: string | null = null;
 
-  const { data: rooms } = await supabase
-    .from("meeting_rooms")
-    .select("id, coworking_id, name, capacity, color, sort_order")
-    .eq("coworking_id", client.coworking_id)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
+  if (params.room) {
+    const { data: r } = await supabase
+      .rpc("room_info", { p_room_id: params.room })
+      .single();
+    if (r) {
+      const row = r as any;
+      initialRoomId = row.id;
+      coworkingId = row.coworking_id;
+    }
+  }
+  if (!coworkingId && cookie) {
+    coworkingId = cookie.coworkingId;
+  }
+  if (!coworkingId) {
+    redirect("/portal/login?next=/portal/book");
+  }
+
+  const { data: rooms } = await supabase.rpc("rooms_for_coworking", {
+    p_coworking_id: coworkingId,
+  });
 
   const today = new Date().toISOString().slice(0, 10);
   const date = params.date ?? today;
-  const dayStart = new Date(date + "T00:00:00").toISOString();
-  const dayEnd = new Date(date + "T23:59:59").toISOString();
 
-  const { data: bookings } = await supabase
-    .from("room_bookings")
-    .select("id, room_id, start_at, end_at, client_id, source, status")
-    .eq("coworking_id", client.coworking_id)
-    .eq("status", "confirmed")
-    .gte("start_at", dayStart)
-    .lte("start_at", dayEnd);
-
-  const { data: balanceArr } = await supabase.rpc("client_meeting_hours_balance", {
-    p_client_id: client.id,
-    p_week_anchor: date,
+  const { data: bookings } = await supabase.rpc("coworking_bookings_for_day", {
+    p_coworking_id: coworkingId,
+    p_day: date,
   });
-  const balance = Array.isArray(balanceArr) ? balanceArr[0] : balanceArr;
+
+  let balance: any = null;
+  if (cookie) {
+    const { data: balanceArr } = await supabase.rpc(
+      "client_meeting_hours_balance",
+      { p_client_id: cookie.clientId, p_week_anchor: date },
+    );
+    balance = Array.isArray(balanceArr) ? balanceArr[0] : balanceArr;
+  }
 
   return (
     <div>
       <div className="mb-5">
-        <h1 className="text-[24px] font-semibold tracking-tight text-ink-950">Reservar sala</h1>
+        <h1 className="text-[24px] font-semibold tracking-tight text-ink-950">
+          Reservar sala
+        </h1>
         <p className="mt-1 text-[13px] text-ink-500">
           {balance
             ? `Tienes ${(balance.remaining_minutes / 60).toFixed(2)}h disponibles esta semana.`
-            : "Selecciona día, sala y hora."}
+            : "Pulsa un hueco libre y te pediremos sólo el email para confirmar."}
         </p>
       </div>
       <BookFlow
-        clientId={client.id}
-        clientName={client.name}
-        coworkingId={client.coworking_id}
+        prefilledEmail={cookie?.email ?? null}
+        prefilledName={cookie?.name ?? null}
+        coworkingId={coworkingId}
         rooms={(rooms ?? []) as any}
         bookings={(bookings ?? []) as any}
         date={date}
         balance={balance}
         initialRoomId={
-          params.room && (rooms ?? []).some((r) => r.id === params.room)
-            ? params.room
+          initialRoomId && (rooms ?? []).some((r: any) => r.id === initialRoomId)
+            ? initialRoomId
             : undefined
         }
       />
