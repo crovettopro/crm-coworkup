@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
 import { CalendarPlus, Clock, X } from "lucide-react";
 
 type Row = {
@@ -13,7 +12,10 @@ type Row = {
   status: "confirmed" | "cancelled";
   source: "client" | "staff" | "walk_in";
   notes: string | null;
-  meeting_rooms: { name: string; color: string | null; capacity: number | null };
+  room_id: string;
+  room_name: string;
+  room_color: string | null;
+  room_capacity: number | null;
 };
 
 function fmt(d: Date) {
@@ -26,25 +28,45 @@ function fmtTime(d: Date) {
 export function BookingsList({ rows }: { rows: Row[] }) {
   const router = useRouter();
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const now = Date.now();
 
-  const upcoming = rows.filter((r) => new Date(r.end_at).getTime() >= now && r.status === "confirmed");
-  const past = rows.filter((r) => new Date(r.end_at).getTime() < now || r.status === "cancelled");
+  const upcoming = rows.filter(
+    (r) => new Date(r.end_at).getTime() >= now && r.status === "confirmed",
+  );
+  const past = rows.filter(
+    (r) => new Date(r.end_at).getTime() < now || r.status === "cancelled",
+  );
 
   async function cancelBooking(id: string) {
     if (!confirm("¿Cancelar esta reserva? Recuperarás las horas.")) return;
     setBusyId(id);
-    const supabase = createClient();
-    await supabase
-      .from("room_bookings")
-      .update({ status: "cancelled", cancelled_at: new Date().toISOString() })
-      .eq("id", id);
+    setError(null);
+    const res = await fetch("/api/portal/cancel", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ booking_id: id }),
+    });
     setBusyId(null);
+    if (!res.ok) {
+      try {
+        const data = await res.json();
+        setError(data?.error || "No se pudo cancelar.");
+      } catch {
+        setError("No se pudo cancelar.");
+      }
+      return;
+    }
     router.refresh();
   }
 
   return (
     <div className="space-y-7">
+      {error && (
+        <p className="text-[12.5px] text-red-700 bg-red-50 border border-red-100 rounded-md px-3 py-2">
+          {error}
+        </p>
+      )}
       <div>
         <h2 className="text-[13.5px] font-semibold text-ink-950 mb-2.5">Próximas</h2>
         {upcoming.length === 0 ? (
@@ -70,11 +92,11 @@ export function BookingsList({ rows }: { rows: Row[] }) {
                 >
                   <span
                     className="inline-block h-9 w-1.5 rounded-full shrink-0"
-                    style={{ backgroundColor: b.meeting_rooms?.color ?? "#6366f1" }}
+                    style={{ backgroundColor: b.room_color ?? "#6366f1" }}
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-[13.5px] font-medium text-ink-950 truncate">
-                      {b.meeting_rooms?.name}
+                      {b.room_name}
                     </p>
                     <p className="text-[12px] text-ink-500 capitalize">{fmt(s)}</p>
                     {b.notes && (
@@ -119,11 +141,11 @@ export function BookingsList({ rows }: { rows: Row[] }) {
                 >
                   <span
                     className="inline-block h-7 w-1 rounded-full shrink-0"
-                    style={{ backgroundColor: b.meeting_rooms?.color ?? "#6366f1" }}
+                    style={{ backgroundColor: b.room_color ?? "#6366f1" }}
                   />
                   <div className="flex-1 min-w-0">
                     <p className="text-[12.5px] font-medium text-ink-700 truncate">
-                      {b.meeting_rooms?.name}
+                      {b.room_name}
                       {isCancelled && (
                         <span className="ml-2 text-[10.5px] font-normal italic text-ink-500">
                           (cancelada)

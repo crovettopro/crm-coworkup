@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
-import { redirect } from "next/navigation";
-import { CalendarPlus, Clock, ArrowRight } from "lucide-react";
+import { getPortalCookie } from "@/lib/portal-cookie";
+import { CalendarPlus, Clock, ArrowRight, LogIn } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -17,45 +17,80 @@ function fmtTime(d: Date) {
 }
 
 export default async function PortalHomePage() {
+  const identity = await getPortalCookie();
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) redirect("/portal/login");
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, name, coworking_id")
-    .eq("auth_user_id", user.id)
-    .single();
-
-  if (!client) {
+  // -----------------------------------------------------------------
+  // Sin cookie: pantalla de bienvenida con CTA a identificarse y a
+  // reservar (la reserva pedirá el email al final del flujo).
+  // -----------------------------------------------------------------
+  if (!identity) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-6 text-center">
-        <p className="text-[14px] text-amber-900 font-medium">
-          Tu email no está vinculado a un cliente del coworking.
-        </p>
-        <p className="mt-1 text-[12.5px] text-amber-800">
-          Avisa al equipo para que te dé de alta. Mientras tanto no puedes reservar.
+      <div className="space-y-6">
+        <div>
+          <p className="text-[13px] text-ink-500">Bienvenido a Cowork Up</p>
+          <h1 className="text-[28px] font-semibold tracking-tight text-ink-950 leading-tight">
+            Reserva una sala de reuniones
+          </h1>
+        </div>
+
+        <div className="rounded-2xl bg-ink-950 text-white p-6 shadow-lg relative overflow-hidden">
+          <div className="pointer-events-none absolute -top-20 -right-20 w-[280px] h-[280px] rounded-full bg-brand-500/15 blur-3xl" />
+          <div className="relative">
+            <p className="text-[11.5px] uppercase tracking-[0.08em] text-brand-400 font-medium">
+              Sin contraseña
+            </p>
+            <h2 className="mt-1.5 text-[20px] font-semibold leading-tight">
+              Sólo necesitas el email con el que estás dado de alta como cliente
+            </h2>
+            <p className="mt-2 text-[13px] text-ink-300">
+              Te recordamos en este móvil 30 días. Cero fricción.
+            </p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <Link
+                href="/portal/login"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 h-11 text-[13.5px] font-semibold text-ink-950 hover:bg-brand-400 transition-colors"
+              >
+                <LogIn className="h-4 w-4" /> Identifícate
+              </Link>
+              <Link
+                href="/portal/bookings"
+                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 h-11 text-[13.5px] text-white hover:bg-white/10"
+              >
+                Mis reservas
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        <p className="text-[12.5px] text-ink-500 text-center">
+          Si has escaneado el QR de una sala, también puedes pulsar abajo para ver
+          su disponibilidad y reservar al momento.
         </p>
       </div>
     );
   }
 
-  const { data: balanceArr } = await supabase.rpc("client_meeting_hours_balance", {
-    p_client_id: client.id,
-  });
+  // -----------------------------------------------------------------
+  // Con cookie: dashboard con balance + próximas reservas
+  // -----------------------------------------------------------------
+  const { data: balanceArr } = await supabase.rpc(
+    "client_meeting_hours_balance",
+    { p_client_id: identity.clientId },
+  );
   const balance = Array.isArray(balanceArr) ? balanceArr[0] : balanceArr;
 
-  const nowISO = new Date().toISOString();
-  const { data: upcoming } = await supabase
-    .from("room_bookings")
-    .select("id, start_at, end_at, room_id, status, meeting_rooms(name, color)")
-    .eq("client_id", client.id)
-    .eq("status", "confirmed")
-    .gte("end_at", nowISO)
-    .order("start_at", { ascending: true })
-    .limit(6);
+  const { data: upcoming } = await supabase.rpc("quick_list_bookings", {
+    p_email: identity.email,
+  });
+
+  const now = Date.now();
+  const upcomingFiltered = (upcoming ?? [])
+    .filter(
+      (b: any) =>
+        new Date(b.end_at).getTime() >= now && b.status === "confirmed",
+    )
+    .slice(0, 6);
 
   const incH = balance ? balance.included_minutes / 60 : 0;
   const remH = balance ? balance.remaining_minutes / 60 : 0;
@@ -65,7 +100,9 @@ export default async function PortalHomePage() {
   return (
     <div className="space-y-6">
       <div>
-        <p className="text-[13px] text-ink-500">Hola{client.name ? `, ${client.name.split(" ")[0]}` : ""}</p>
+        <p className="text-[13px] text-ink-500">
+          Hola{identity.name ? `, ${identity.name.split(" ")[0]}` : ""}
+        </p>
         <h1 className="text-[28px] font-semibold tracking-tight text-ink-950 leading-tight">
           Tus salas de reuniones
         </h1>
@@ -115,7 +152,7 @@ export default async function PortalHomePage() {
             Ver todas <ArrowRight className="h-3 w-3" />
           </Link>
         </div>
-        {!upcoming || upcoming.length === 0 ? (
+        {upcomingFiltered.length === 0 ? (
           <div className="rounded-xl border border-dashed border-ink-300 bg-white p-6 text-center">
             <Clock className="mx-auto h-5 w-5 text-ink-400 mb-1.5" />
             <p className="text-[13.5px] text-ink-500">No tienes reservas próximas.</p>
@@ -128,7 +165,7 @@ export default async function PortalHomePage() {
           </div>
         ) : (
           <ul className="space-y-2">
-            {upcoming.map((b: any) => {
+            {upcomingFiltered.map((b: any) => {
               const s = new Date(b.start_at);
               const e = new Date(b.end_at);
               return (
@@ -139,11 +176,11 @@ export default async function PortalHomePage() {
                   >
                     <span
                       className="inline-block h-9 w-1.5 rounded-full shrink-0"
-                      style={{ backgroundColor: b.meeting_rooms?.color ?? "#6366f1" }}
+                      style={{ backgroundColor: b.room_color ?? "#6366f1" }}
                     />
                     <div className="flex-1 min-w-0">
                       <p className="text-[13.5px] font-medium text-ink-950 truncate">
-                        {b.meeting_rooms?.name}
+                        {b.room_name}
                       </p>
                       <p className="text-[12px] text-ink-500 capitalize">{fmt(s)}</p>
                     </div>

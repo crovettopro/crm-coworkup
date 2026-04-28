@@ -2,9 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase/client";
 import {
-  ChevronLeft,
   ChevronRight,
   Check,
   AlertCircle,
@@ -13,15 +11,18 @@ import {
   Lock,
   X,
   Sparkles,
+  Mail,
 } from "lucide-react";
 
 type Room = { id: string; name: string; capacity: number | null; color: string | null };
-type Booking = { id: string; room_id: string; start_at: string; end_at: string; client_id: string | null };
+type Booking = { room_id: string; start_at: string; end_at: string };
 type Balance = { included_minutes: number; used_minutes: number; remaining_minutes: number } | null;
 
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 22;
 const SLOT_MIN = 15;
+const SLOTS_PER_HOUR = 60 / SLOT_MIN;
+const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR;
 const DURATIONS = [30, 45, 60, 90, 120, 180];
 
 function pad(n: number) {
@@ -118,17 +119,17 @@ function dayPills(today: Date, count = 7) {
 }
 
 export function BookFlow({
-  clientId,
-  clientName,
-  coworkingId,
+  prefilledEmail,
+  prefilledName,
+  coworkingId: _coworkingId,
   rooms,
   bookings,
   date,
   balance,
   initialRoomId,
 }: {
-  clientId: string;
-  clientName: string;
+  prefilledEmail: string | null;
+  prefilledName: string | null;
   coworkingId: string;
   rooms: Room[];
   bookings: Booking[];
@@ -152,6 +153,7 @@ export function BookFlow({
     end: number;
     room: string;
   } | null>(null);
+  const [emailInput, setEmailInput] = useState<string>(prefilledEmail ?? "");
 
   const today = new Date();
   const pills = useMemo(() => dayPills(today, 7), [today.toDateString()]);
@@ -180,40 +182,39 @@ export function BookFlow({
 
   async function handleConfirm() {
     if (!pendingChunk || !selectedRoom) return;
+    const email = emailInput.trim().toLowerCase();
+    if (!email || !email.includes("@")) {
+      setError("Escribe tu email para confirmar.");
+      return;
+    }
     const start = pendingChunk.start;
     const end = start + duration * 60 * 1000;
     if (end > pendingChunk.end) {
       setError("La duración no cabe en este hueco.");
       return;
     }
-    if (balance && balance.remaining_minutes - duration < 0) {
-      setError(
-        `No tienes saldo suficiente. Te quedan ${(balance.remaining_minutes / 60).toFixed(2)}h y la reserva ocupa ${(duration / 60).toFixed(2)}h.`,
-      );
-      return;
-    }
     setBusy(true);
     setError(null);
-    const supabase = createClient();
-    const { error: insErr } = await supabase.from("room_bookings").insert({
-      room_id: selectedRoom,
-      coworking_id: coworkingId,
-      client_id: clientId,
-      start_at: new Date(start).toISOString(),
-      end_at: new Date(end).toISOString(),
-      status: "confirmed",
-      source: "client",
+    const res = await fetch("/api/portal/book", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        email,
+        room_id: selectedRoom,
+        start_at: new Date(start).toISOString(),
+        end_at: new Date(end).toISOString(),
+      }),
     });
     setBusy(false);
-    if (insErr) {
-      if (
-        insErr.message.toLowerCase().includes("rb_no_overlap") ||
-        insErr.code === "23P01"
-      ) {
-        setError("Otra persona acaba de reservar ese hueco. Elige otro.");
-      } else {
-        setError(insErr.message);
+    if (!res.ok) {
+      let msg = "No se pudo reservar.";
+      try {
+        const data = await res.json();
+        if (data?.error) msg = data.error;
+      } catch {
+        /* ignore */
       }
+      setError(msg);
       return;
     }
     setSuccess({
@@ -411,7 +412,9 @@ export function BookFlow({
           duration={duration}
           setDuration={setDuration}
           balance={balance}
-          clientName={clientName}
+          email={emailInput}
+          setEmail={setEmailInput}
+          rememberedName={prefilledEmail ? prefilledName : null}
           roomName={selectedRoomObj?.name ?? ""}
           busy={busy}
           error={error}
@@ -431,7 +434,9 @@ function BookingSheet({
   duration,
   setDuration,
   balance,
-  clientName,
+  email,
+  setEmail,
+  rememberedName,
   roomName,
   busy,
   error,
@@ -442,7 +447,9 @@ function BookingSheet({
   duration: number;
   setDuration: (m: number) => void;
   balance: Balance;
-  clientName: string;
+  email: string;
+  setEmail: (e: string) => void;
+  rememberedName: string | null;
   roomName: string;
   busy: boolean;
   error: string | null;
@@ -463,7 +470,6 @@ function BookingSheet({
         className="w-full sm:max-w-[440px] bg-white rounded-t-3xl sm:rounded-2xl shadow-xl border-t sm:border border-ink-100 overflow-hidden animate-in"
         onClick={(e) => e.stopPropagation()}
       >
-        {/* Drag handle on mobile */}
         <div className="sm:hidden flex justify-center pt-2.5 pb-1">
           <div className="h-1 w-10 rounded-full bg-ink-200" />
         </div>
@@ -514,6 +520,32 @@ function BookingSheet({
             </div>
           </div>
 
+          {/* Email field */}
+          <div>
+            <label className="block text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1.5">
+              Tu email
+            </label>
+            <div className="relative">
+              <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-400" />
+              <input
+                type="email"
+                inputMode="email"
+                autoComplete="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+                placeholder="tu@email.com"
+                className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-[14.5px] text-ink-950 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
+              />
+            </div>
+            {rememberedName && (
+              <p className="mt-1 text-[11.5px] text-ink-500">
+                Te tenemos como{" "}
+                <span className="font-medium text-ink-700">{rememberedName}</span>
+              </p>
+            )}
+          </div>
+
           {/* Duration chips */}
           <div>
             <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-2">
@@ -549,7 +581,7 @@ function BookingSheet({
             )}
           </div>
 
-          {/* Balance hint */}
+          {/* Balance hint (only if cookie present) */}
           {balance && (
             <div
               className={
@@ -583,11 +615,6 @@ function BookingSheet({
             </div>
           )}
 
-          {/* Reserved as */}
-          <p className="text-[11.5px] text-ink-500">
-            A nombre de <span className="font-medium text-ink-800">{clientName}</span>
-          </p>
-
           {error && (
             <p className="text-[12.5px] text-red-700 bg-red-50 border border-red-100 rounded-md px-3 py-2">
               {error}
@@ -603,7 +630,7 @@ function BookingSheet({
             </button>
             <button
               onClick={onConfirm}
-              disabled={busy || !!exceedsBalance}
+              disabled={busy}
               className="flex-1 h-11 rounded-lg bg-ink-950 px-5 text-[13px] font-semibold text-white hover:bg-ink-800 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {busy ? "Reservando…" : "Confirmar reserva"}
