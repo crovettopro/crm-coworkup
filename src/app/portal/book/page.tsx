@@ -48,6 +48,13 @@ export default async function PortalBookPage({
     p_coworking_id: coworkingId,
   });
 
+  // Horario de apertura del coworking (slot grid se ajusta a esto)
+  const { data: cwInfo } = await supabase
+    .rpc("coworking_info", { p_id: coworkingId })
+    .single();
+  const openMin = (cwInfo as any)?.open_min ?? 480;   // 08:00
+  const closeMin = (cwInfo as any)?.close_min ?? 1320; // 22:00
+
   const today = new Date().toISOString().slice(0, 10);
   const date = params.date ?? today;
 
@@ -90,6 +97,8 @@ export default async function PortalBookPage({
             ? initialRoomId
             : undefined
         }
+        openMin={openMin}
+        closeMin={closeMin}
       />
     </div>
   );
