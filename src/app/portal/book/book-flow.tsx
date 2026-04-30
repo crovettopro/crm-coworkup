@@ -7,8 +7,6 @@ import {
   Check,
   AlertCircle,
   Users,
-  Clock,
-  Lock,
   X,
   Sparkles,
   Mail,
@@ -20,10 +18,13 @@ type Balance = { included_minutes: number; used_minutes: number; remaining_minut
 
 const DAY_START_HOUR = 8;
 const DAY_END_HOUR = 22;
-const SLOT_MIN = 15;
-const SLOTS_PER_HOUR = 60 / SLOT_MIN;
-const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR;
-const DURATIONS = [30, 45, 60, 90, 120, 180];
+const SLOT_MIN = 30;
+const SLOTS_PER_HOUR = 60 / SLOT_MIN; // 2
+const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR; // 28
+const ROW_PX = 44;
+const HEADER_PX = 38;
+const TIME_COL_PX = 56;
+const DURATIONS = [30, 60, 90, 120, 180, 240];
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -41,20 +42,6 @@ function fmtDur(min: number) {
   const m = min % 60;
   return m === 0 ? `${h}h` : `${h}h ${m}m`;
 }
-function snap15Up(ts: number) {
-  const d = new Date(ts);
-  const m = d.getMinutes();
-  const add = (15 - (m % 15)) % 15;
-  d.setMinutes(m + add, 0, 0);
-  return d.getTime();
-}
-function dayBounds(date: string) {
-  const start = new Date(date + "T00:00:00");
-  start.setHours(DAY_START_HOUR, 0, 0, 0);
-  const end = new Date(date + "T00:00:00");
-  end.setHours(DAY_END_HOUR, 0, 0, 0);
-  return { start: start.getTime(), end: end.getTime() };
-}
 function isSameDay(a: Date, b: Date) {
   return (
     a.getFullYear() === b.getFullYear() &&
@@ -62,66 +49,47 @@ function isSameDay(a: Date, b: Date) {
     a.getDate() === b.getDate()
   );
 }
-
-type TimelineItem =
-  | { kind: "free"; start: number; end: number }
-  | { kind: "busy"; start: number; end: number };
-
-function buildTimeline(bookings: Booking[], roomId: string, date: string): TimelineItem[] {
-  const { start: dayStart, end: dayEnd } = dayBounds(date);
-  const isToday = isSameDay(new Date(date + "T12:00:00"), new Date());
-  const minStart = isToday ? Math.max(dayStart, snap15Up(Date.now())) : dayStart;
-  if (minStart >= dayEnd) return [];
-
-  const sorted = bookings
-    .filter((b) => b.room_id === roomId)
-    .map((b) => ({
-      start: new Date(b.start_at).getTime(),
-      end: new Date(b.end_at).getTime(),
-    }))
-    .filter((b) => b.end > minStart && b.start < dayEnd)
-    .sort((a, b) => a.start - b.start);
-
-  const items: TimelineItem[] = [];
-  let cursor = minStart;
-  for (const b of sorted) {
-    const bs = Math.max(b.start, minStart);
-    const be = Math.min(b.end, dayEnd);
-    if (bs > cursor) items.push({ kind: "free", start: cursor, end: bs });
-    items.push({ kind: "busy", start: bs, end: be });
-    cursor = Math.max(cursor, b.end);
-    if (cursor >= dayEnd) break;
-  }
-  if (cursor < dayEnd) items.push({ kind: "free", start: cursor, end: dayEnd });
-
-  return items.filter((i) => i.end - i.start >= SLOT_MIN * 60 * 1000);
+function slotStartIdx(d: Date) {
+  return (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR + Math.floor(d.getMinutes() / SLOT_MIN);
 }
-
+function slotEndIdx(d: Date) {
+  return (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR + Math.ceil(d.getMinutes() / SLOT_MIN);
+}
+function slotLabel(idx: number) {
+  const h = DAY_START_HOUR + Math.floor(idx / SLOTS_PER_HOUR);
+  const m = (idx % SLOTS_PER_HOUR) * SLOT_MIN;
+  return `${pad(h)}:${pad(m)}`;
+}
+function slotStartTimestamp(date: string, idx: number) {
+  const d = new Date(date + "T00:00:00");
+  const totalMin = DAY_START_HOUR * 60 + idx * SLOT_MIN;
+  d.setHours(Math.floor(totalMin / 60), totalMin % 60, 0, 0);
+  return d.getTime();
+}
 function dayPills(today: Date, count = 7) {
-  const pills: { date: string; label: string; sub: string; isToday: boolean }[] = [];
+  const pills: { date: string; label: string; sub: string }[] = [];
   for (let i = 0; i < count; i++) {
     const d = new Date(today);
     d.setDate(d.getDate() + i);
-    const label =
-      i === 0
-        ? "Hoy"
-        : i === 1
-        ? "Mañana"
-        : d.toLocaleDateString("es-ES", { weekday: "short" });
     pills.push({
       date: isoDate(d),
-      label,
+      label:
+        i === 0
+          ? "Hoy"
+          : i === 1
+          ? "Mañana"
+          : d.toLocaleDateString("es-ES", { weekday: "short" }),
       sub: d.toLocaleDateString("es-ES", { day: "numeric", month: "short" }),
-      isToday: i === 0,
     });
   }
   return pills;
 }
 
+type ClickedSlot = { roomId: string; start: number; maxEnd: number };
+
 export function BookFlow({
   prefilledEmail,
   prefilledName,
-  coworkingId: _coworkingId,
   rooms,
   bookings,
   date,
@@ -138,13 +106,7 @@ export function BookFlow({
   initialRoomId?: string;
 }) {
   const router = useRouter();
-  const [selectedRoom, setSelectedRoom] = useState<string>(
-    initialRoomId ?? rooms[0]?.id ?? "",
-  );
-  const [pendingChunk, setPendingChunk] = useState<{
-    start: number;
-    end: number;
-  } | null>(null);
+  const [pending, setPending] = useState<ClickedSlot | null>(null);
   const [duration, setDuration] = useState<number>(60);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -157,39 +119,77 @@ export function BookFlow({
 
   const today = new Date();
   const pills = useMemo(() => dayPills(today, 7), [today.toDateString()]);
+  const isToday = useMemo(
+    () => isSameDay(new Date(date + "T12:00:00"), new Date()),
+    [date],
+  );
 
   function setDate(newDate: string) {
-    setPendingChunk(null);
+    setPending(null);
     setSuccess(null);
     setError(null);
     router.push(`/portal/book?date=${newDate}`);
   }
 
-  const items = useMemo(
-    () => (selectedRoom ? buildTimeline(bookings, selectedRoom, date) : []),
-    [bookings, selectedRoom, date],
-  );
+  // Build occupancy + per-room sorted bookings (start ms)
+  const { occupied, perRoomSorted } = useMemo(() => {
+    const occ: boolean[][] = Array(TOTAL_SLOTS)
+      .fill(null)
+      .map(() => Array(rooms.length).fill(false));
+    const sortedByRoom = new Map<string, { start: number; end: number }[]>();
+    for (const b of bookings) {
+      const colIdx = rooms.findIndex((r) => r.id === b.room_id);
+      if (colIdx < 0) continue;
+      const start = new Date(b.start_at);
+      const end = new Date(b.end_at);
+      const ss = slotStartIdx(start);
+      const se = slotEndIdx(end);
+      for (let s = Math.max(0, ss); s < Math.min(TOTAL_SLOTS, se); s++) {
+        occ[s][colIdx] = true;
+      }
+      const arr = sortedByRoom.get(b.room_id) ?? [];
+      arr.push({ start: start.getTime(), end: end.getTime() });
+      sortedByRoom.set(b.room_id, arr);
+    }
+    for (const arr of sortedByRoom.values()) arr.sort((a, b) => a.start - b.start);
+    return { occupied: occ, perRoomSorted: sortedByRoom };
+  }, [bookings, rooms]);
 
-  const selectedRoomObj = rooms.find((r) => r.id === selectedRoom);
+  // For "is past" rendering on today
+  const nowMs = Date.now();
+  function isSlotPast(slotIdx: number) {
+    if (!isToday) return false;
+    return slotStartTimestamp(date, slotIdx) + SLOT_MIN * 60 * 1000 <= nowMs;
+  }
 
-  function openChunk(chunk: { start: number; end: number }) {
-    const maxMin = Math.floor((chunk.end - chunk.start) / 60000);
-    const allowed = DURATIONS.filter((m) => m <= maxMin);
-    setDuration(allowed[allowed.length - 1] ?? Math.min(60, maxMin));
-    setPendingChunk(chunk);
+  function openSlot(roomId: string, slotIdx: number) {
+    const start = slotStartTimestamp(date, slotIdx);
+    // Find next booking in this room after `start` to compute maxEnd
+    const list = perRoomSorted.get(roomId) ?? [];
+    let maxEnd = slotStartTimestamp(date, TOTAL_SLOTS); // end of day
+    for (const b of list) {
+      if (b.start > start) {
+        maxEnd = Math.min(maxEnd, b.start);
+        break;
+      }
+    }
+    setPending({ roomId, start, maxEnd });
     setError(null);
+    const maxMin = Math.floor((maxEnd - start) / 60000);
+    const allowed = DURATIONS.filter((m) => m <= maxMin);
+    setDuration(allowed[Math.min(1, allowed.length - 1)] ?? Math.min(60, maxMin));
   }
 
   async function handleConfirm() {
-    if (!pendingChunk || !selectedRoom) return;
+    if (!pending) return;
     const email = emailInput.trim().toLowerCase();
     if (!email || !email.includes("@")) {
       setError("Escribe tu email para confirmar.");
       return;
     }
-    const start = pendingChunk.start;
+    const start = pending.start;
     const end = start + duration * 60 * 1000;
-    if (end > pendingChunk.end) {
+    if (end > pending.maxEnd) {
       setError("La duración no cabe en este hueco.");
       return;
     }
@@ -200,7 +200,7 @@ export function BookFlow({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         email,
-        room_id: selectedRoom,
+        room_id: pending.roomId,
         start_at: new Date(start).toISOString(),
         end_at: new Date(end).toISOString(),
       }),
@@ -217,12 +217,9 @@ export function BookFlow({
       setError(msg);
       return;
     }
-    setSuccess({
-      start,
-      end,
-      room: selectedRoomObj?.name ?? "Sala",
-    });
-    setPendingChunk(null);
+    const roomName = rooms.find((r) => r.id === pending.roomId)?.name ?? "Sala";
+    setSuccess({ start, end, room: roomName });
+    setPending(null);
     router.refresh();
   }
 
@@ -291,135 +288,34 @@ export function BookFlow({
         </div>
       </div>
 
-      {/* Room selector */}
-      {rooms.length > 1 && (
-        <div className="flex flex-wrap gap-2">
-          {rooms.map((r) => {
-            const active = r.id === selectedRoom;
-            return (
-              <button
-                key={r.id}
-                onClick={() => {
-                  setSelectedRoom(r.id);
-                  setPendingChunk(null);
-                }}
-                className={
-                  "inline-flex items-center gap-2 h-10 rounded-xl px-4 transition border " +
-                  (active
-                    ? "bg-ink-950 text-white border-ink-950"
-                    : "bg-white text-ink-800 border-ink-200 hover:border-ink-300")
-                }
-              >
-                <span
-                  className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
-                  style={{ backgroundColor: r.color ?? "#6366f1" }}
-                />
-                <span className="text-[13.5px] font-semibold">{r.name}</span>
-                {r.capacity ? (
-                  <span
-                    className={
-                      "inline-flex items-center gap-1 text-[11.5px] font-mono " +
-                      (active ? "text-ink-300" : "text-ink-500")
-                    }
-                  >
-                    <Users className="h-3 w-3" /> {r.capacity}
-                  </span>
-                ) : null}
-              </button>
-            );
-          })}
-        </div>
-      )}
-
-      {/* Timeline */}
-      <div>
-        <div className="mb-2.5 flex items-center justify-between">
-          <h2 className="text-[13px] font-semibold text-ink-950">
-            Huecos disponibles
-          </h2>
-          {selectedRoomObj && (
-            <span className="text-[11.5px] text-ink-500">
-              {selectedRoomObj.name}
-              {selectedRoomObj.capacity ? ` · ${selectedRoomObj.capacity}p` : ""}
-            </span>
-          )}
-        </div>
-        {items.length === 0 ? (
-          <div className="rounded-2xl border border-dashed border-ink-300 bg-white p-10 text-center">
-            <Clock className="mx-auto h-6 w-6 text-ink-400 mb-2" />
-            <p className="text-[13.5px] text-ink-700 font-medium">
-              No quedan huecos en {selectedRoomObj?.name ?? "esta sala"}.
-            </p>
-            <p className="mt-1 text-[12px] text-ink-500">
-              Prueba otro día o cambia de sala.
-            </p>
-          </div>
-        ) : (
-          <ul className="space-y-2">
-            {items.map((it, idx) =>
-              it.kind === "free" ? (
-                <li key={idx}>
-                  <button
-                    onClick={() => openChunk(it)}
-                    className="group w-full rounded-2xl border-2 border-dashed border-emerald-200 bg-emerald-50/60 hover:bg-emerald-50 hover:border-emerald-300 transition p-4 text-left"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-11 w-11 shrink-0 place-items-center rounded-xl bg-emerald-100 text-emerald-700 group-hover:bg-emerald-200/80 transition">
-                        <Sparkles className="h-4 w-4" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[15px] font-semibold text-emerald-950 tabular font-mono">
-                          {fmtHM(it.start)}
-                          <span className="text-emerald-700 font-normal mx-1">→</span>
-                          {fmtHM(it.end)}
-                        </p>
-                        <p className="text-[12px] text-emerald-700">
-                          {fmtDur((it.end - it.start) / 60000)} libre · pulsa para reservar
-                        </p>
-                      </div>
-                      <ChevronRight className="h-4 w-4 text-emerald-700 shrink-0" />
-                    </div>
-                  </button>
-                </li>
-              ) : (
-                <li key={idx}>
-                  <div className="rounded-2xl bg-ink-50 border border-ink-100 p-3.5">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-ink-100 text-ink-500">
-                        <Lock className="h-3.5 w-3.5" />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="text-[13.5px] font-medium text-ink-700 tabular font-mono">
-                          {fmtHM(it.start)}
-                          <span className="text-ink-400 font-normal mx-1">→</span>
-                          {fmtHM(it.end)}
-                        </p>
-                        <p className="text-[11.5px] text-ink-500">Ocupado</p>
-                      </div>
-                    </div>
-                  </div>
-                </li>
-              ),
-            )}
-          </ul>
-        )}
-      </div>
+      {/* Vertical grid */}
+      <DayGrid
+        rooms={rooms}
+        occupied={occupied}
+        bookings={bookings}
+        isSlotPast={isSlotPast}
+        onSlotClick={openSlot}
+        showCurrentTimeLine={isToday}
+        date={date}
+        highlightRoomId={initialRoomId}
+      />
 
       {/* Booking sheet */}
-      {pendingChunk && (
+      {pending && (
         <BookingSheet
-          chunk={pendingChunk}
+          start={pending.start}
+          maxEnd={pending.maxEnd}
           duration={duration}
           setDuration={setDuration}
           balance={balance}
           email={emailInput}
           setEmail={setEmailInput}
           rememberedName={prefilledEmail ? prefilledName : null}
-          roomName={selectedRoomObj?.name ?? ""}
+          roomName={rooms.find((r) => r.id === pending.roomId)?.name ?? ""}
           busy={busy}
           error={error}
           onClose={() => {
-            setPendingChunk(null);
+            setPending(null);
             setError(null);
           }}
           onConfirm={handleConfirm}
@@ -429,8 +325,360 @@ export function BookFlow({
   );
 }
 
+// =====================================================================
+// DayGrid: vertical grid (hora ↓, salas →) compartido cliente / staff
+// =====================================================================
+type BookingForGrid = {
+  id?: string;
+  room_id: string;
+  start_at: string;
+  end_at: string;
+  source?: "client" | "staff" | "walk_in";
+  status?: "confirmed" | "cancelled";
+  walk_in_name?: string | null;
+  clients?: { name: string; company_name: string | null } | null;
+};
+
+export function DayGrid({
+  rooms,
+  occupied,
+  bookings,
+  isSlotPast,
+  onSlotClick,
+  onBookingClick,
+  showCurrentTimeLine,
+  date,
+  highlightRoomId,
+  showBookingTitles,
+}: {
+  rooms: Room[];
+  occupied: boolean[][];
+  bookings: BookingForGrid[];
+  isSlotPast?: (slotIdx: number) => boolean;
+  onSlotClick: (roomId: string, slotIdx: number) => void;
+  onBookingClick?: (b: BookingForGrid) => void;
+  showCurrentTimeLine?: boolean;
+  date: string;
+  highlightRoomId?: string;
+  showBookingTitles?: boolean;
+}) {
+  if (rooms.length === 0) {
+    return (
+      <div className="rounded-2xl border border-dashed border-ink-300 bg-white p-10 text-center">
+        <p className="text-[13.5px] text-ink-700 font-medium">
+          No hay salas activas para este coworking.
+        </p>
+      </div>
+    );
+  }
+
+  const totalHeight = HEADER_PX + TOTAL_SLOTS * ROW_PX;
+  const gridStyle: React.CSSProperties = {
+    display: "grid",
+    gridTemplateColumns: `${TIME_COL_PX}px repeat(${rooms.length}, minmax(0, 1fr))`,
+    gridTemplateRows: `${HEADER_PX}px repeat(${TOTAL_SLOTS}, ${ROW_PX}px)`,
+    height: totalHeight,
+  };
+
+  // Current-time line position (only when showCurrentTimeLine)
+  const now = new Date();
+  let nowOffsetPx: number | null = null;
+  if (showCurrentTimeLine) {
+    const h = now.getHours();
+    if (h >= DAY_START_HOUR && h < DAY_END_HOUR) {
+      const slot = (h - DAY_START_HOUR) * SLOTS_PER_HOUR + now.getMinutes() / SLOT_MIN;
+      nowOffsetPx = HEADER_PX + slot * ROW_PX;
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-ink-200 bg-white overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+      <div className="relative" style={gridStyle}>
+        {/* Header: empty time corner */}
+        <div
+          className="border-b border-r border-ink-200 bg-ink-50/60 flex items-center justify-center text-[10px] font-medium uppercase tracking-[0.06em] text-ink-500"
+          style={{ gridRow: 1, gridColumn: 1 }}
+        >
+          Hora
+        </div>
+
+        {/* Header: room names */}
+        {rooms.map((r, i) => {
+          const isHighlight = highlightRoomId === r.id;
+          return (
+            <div
+              key={r.id}
+              className={
+                "border-b border-ink-200 px-3 flex items-center gap-2 relative " +
+                (i < rooms.length - 1 ? "border-r border-ink-200 " : "") +
+                (isHighlight ? "bg-brand-50/60" : "bg-ink-50/30")
+              }
+              style={{ gridRow: 1, gridColumn: i + 2 }}
+            >
+              <span
+                className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
+                style={{ backgroundColor: r.color ?? "#6366f1" }}
+              />
+              <p className="text-[13px] font-semibold text-ink-950 truncate">{r.name}</p>
+              {r.capacity ? (
+                <span className="text-[10.5px] text-ink-500 font-mono inline-flex items-center gap-0.5 ml-auto">
+                  <Users className="h-2.5 w-2.5" /> {r.capacity}
+                </span>
+              ) : null}
+            </div>
+          );
+        })}
+
+        {/* Time labels + cells */}
+        {Array.from({ length: TOTAL_SLOTS }).map((_, slotIdx) => (
+          <SlotRow
+            key={slotIdx}
+            slotIdx={slotIdx}
+            rooms={rooms}
+            occupied={occupied}
+            isSlotPast={isSlotPast?.(slotIdx) ?? false}
+            onSlotClick={onSlotClick}
+            highlightRoomId={highlightRoomId}
+          />
+        ))}
+
+        {/* Bookings overlay */}
+        {bookings
+          .filter((b) => (b.status ?? "confirmed") === "confirmed")
+          .map((b, idx) => {
+            const colIdx = rooms.findIndex((r) => r.id === b.room_id);
+            if (colIdx < 0) return null;
+            const start = new Date(b.start_at);
+            const end = new Date(b.end_at);
+            const ss = Math.max(0, slotStartIdx(start));
+            const se = Math.min(TOTAL_SLOTS, slotEndIdx(end));
+            if (se <= ss) return null;
+            return (
+              <BookingBlock
+                key={b.id ?? `${b.room_id}-${b.start_at}-${idx}`}
+                booking={b}
+                gridRowStart={ss + 2}
+                gridRowEnd={se + 2}
+                gridColumn={colIdx + 2}
+                onClick={onBookingClick}
+                showTitles={showBookingTitles ?? !!onBookingClick}
+              />
+            );
+          })}
+
+        {/* Current-time horizontal line */}
+        {nowOffsetPx !== null && (
+          <div
+            className="pointer-events-none absolute z-20"
+            style={{
+              top: nowOffsetPx,
+              left: TIME_COL_PX,
+              right: 0,
+              height: 0,
+            }}
+          >
+            <div className="relative">
+              <div className="absolute -left-1.5 -top-[3px] h-1.5 w-1.5 rounded-full bg-red-500" />
+              <div className="h-px w-full bg-red-500/80 shadow-[0_0_4px_rgba(239,68,68,0.4)]" />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SlotRow({
+  slotIdx,
+  rooms,
+  occupied,
+  isSlotPast,
+  onSlotClick,
+  highlightRoomId,
+}: {
+  slotIdx: number;
+  rooms: Room[];
+  occupied: boolean[][];
+  isSlotPast: boolean;
+  onSlotClick: (roomId: string, slotIdx: number) => void;
+  highlightRoomId?: string;
+}) {
+  const isHourMark = slotIdx % SLOTS_PER_HOUR === 0;
+  return (
+    <>
+      <div
+        className={
+          "border-r border-ink-200 px-2 flex items-start justify-end pt-1 text-[10.5px] font-mono tabular text-ink-500 " +
+          (isHourMark ? "border-t border-ink-200 font-semibold text-ink-700" : "")
+        }
+        style={{ gridRow: slotIdx + 2, gridColumn: 1 }}
+      >
+        {isHourMark ? slotLabel(slotIdx) : ""}
+      </div>
+      {rooms.map((r, i) => {
+        const isOcc = occupied[slotIdx]?.[i];
+        const isLastCol = i === rooms.length - 1;
+        const isHighlight = highlightRoomId === r.id;
+        const cellClass = [
+          "relative",
+          !isLastCol ? "border-r border-ink-200" : "",
+          isHourMark ? "border-t border-ink-200" : "border-t border-ink-100",
+          isHighlight ? "bg-brand-50/30" : "",
+        ]
+          .filter(Boolean)
+          .join(" ");
+        return (
+          <div
+            key={r.id}
+            className={cellClass}
+            style={{ gridRow: slotIdx + 2, gridColumn: i + 2 }}
+          >
+            {!isOcc && !isSlotPast && (
+              <button
+                onClick={() => onSlotClick(r.id, slotIdx)}
+                className="absolute inset-0 transition-colors hover:bg-emerald-50 focus:bg-emerald-50 outline-none"
+                aria-label={`Reservar ${r.name} a las ${slotLabel(slotIdx)}`}
+              />
+            )}
+            {isSlotPast && (
+              <div
+                className="absolute inset-0 bg-ink-50/60 pointer-events-none"
+                aria-hidden="true"
+              />
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+function initials(name?: string | null) {
+  if (!name) return "·";
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  if (parts.length === 0) return "·";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function bookingTitle(b: BookingForGrid) {
+  if (b.source === "walk_in") return b.walk_in_name || "Walk-in";
+  if (b.clients?.company_name) return b.clients.company_name;
+  return b.clients?.name || "Reservado";
+}
+function bookingPersonName(b: BookingForGrid) {
+  if (b.source === "walk_in") return b.walk_in_name || "Walk-in";
+  return b.clients?.name || "—";
+}
+
+const BLOCK_TINTS: Record<string, { bg: string; ring: string; text: string; chip: string }> = {
+  client: {
+    bg: "bg-brand-100/90",
+    ring: "ring-brand-300",
+    text: "text-brand-950",
+    chip: "bg-brand-500 text-white",
+  },
+  staff: {
+    bg: "bg-emerald-100/90",
+    ring: "ring-emerald-300",
+    text: "text-emerald-950",
+    chip: "bg-emerald-500 text-white",
+  },
+  walk_in: {
+    bg: "bg-amber-100/90",
+    ring: "ring-amber-300",
+    text: "text-amber-950",
+    chip: "bg-amber-500 text-white",
+  },
+  occupied: {
+    bg: "bg-ink-100",
+    ring: "ring-ink-200",
+    text: "text-ink-700",
+    chip: "bg-ink-400 text-white",
+  },
+};
+
+function BookingBlock({
+  booking,
+  gridRowStart,
+  gridRowEnd,
+  gridColumn,
+  onClick,
+  showTitles,
+}: {
+  booking: BookingForGrid;
+  gridRowStart: number;
+  gridRowEnd: number;
+  gridColumn: number;
+  onClick?: (b: BookingForGrid) => void;
+  showTitles: boolean;
+}) {
+  const tint = showTitles
+    ? BLOCK_TINTS[booking.source ?? "staff"] ?? BLOCK_TINTS.staff
+    : BLOCK_TINTS.occupied;
+  const start = new Date(booking.start_at);
+  const end = new Date(booking.end_at);
+  const heightRows = gridRowEnd - gridRowStart;
+  const Element: any = onClick ? "button" : "div";
+  return (
+    <Element
+      onClick={onClick ? () => onClick(booking) : undefined}
+      style={{
+        gridRow: `${gridRowStart} / ${gridRowEnd}`,
+        gridColumn,
+        margin: "2px",
+        zIndex: 5,
+      }}
+      className={
+        "relative overflow-hidden rounded-md ring-1 px-1.5 py-1 text-left flex flex-col " +
+        tint.bg +
+        " " +
+        tint.ring +
+        " " +
+        tint.text +
+        (onClick ? " transition-shadow hover:shadow-md cursor-pointer" : " cursor-default")
+      }
+      title={`${start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}–${end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}`}
+    >
+      {showTitles ? (
+        <>
+          <div className="flex items-center gap-1 min-w-0">
+            {heightRows > 1 && (
+              <span
+                className={
+                  "shrink-0 grid place-items-center h-4 w-4 rounded-full text-[8.5px] font-bold " +
+                  tint.chip
+                }
+              >
+                {initials(bookingPersonName(booking))}
+              </span>
+            )}
+            <span className="truncate text-[11.5px] font-semibold leading-tight">
+              {bookingTitle(booking)}
+            </span>
+          </div>
+          {heightRows >= 2 && (
+            <span className="text-[10px] opacity-70 font-mono leading-tight mt-0.5">
+              {start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}–
+              {end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
+            </span>
+          )}
+        </>
+      ) : (
+        <span className="text-[11px] opacity-80 font-medium tracking-tight self-center my-auto">
+          Ocupado
+        </span>
+      )}
+    </Element>
+  );
+}
+
+// =====================================================================
+// BookingSheet (modal): reusa estilos previos, ahora con email field
+// =====================================================================
 function BookingSheet({
-  chunk,
+  start,
+  maxEnd,
   duration,
   setDuration,
   balance,
@@ -443,7 +691,8 @@ function BookingSheet({
   onClose,
   onConfirm,
 }: {
-  chunk: { start: number; end: number };
+  start: number;
+  maxEnd: number;
   duration: number;
   setDuration: (m: number) => void;
   balance: Balance;
@@ -456,10 +705,9 @@ function BookingSheet({
   onClose: () => void;
   onConfirm: () => void;
 }) {
-  const maxMin = Math.floor((chunk.end - chunk.start) / 60000);
-  const end = chunk.start + duration * 60 * 1000;
-  const exceedsBalance =
-    balance && balance.remaining_minutes - duration < 0;
+  const maxMin = Math.floor((maxEnd - start) / 60000);
+  const end = start + duration * 60 * 1000;
+  const exceedsBalance = balance && balance.remaining_minutes - duration < 0;
 
   return (
     <div
@@ -479,11 +727,9 @@ function BookingSheet({
             <p className="text-[10.5px] uppercase tracking-[0.08em] font-medium text-ink-500">
               Nueva reserva
             </p>
-            <h3 className="mt-0.5 text-[18px] font-semibold text-ink-950">
-              {roomName}
-            </h3>
+            <h3 className="mt-0.5 text-[18px] font-semibold text-ink-950">{roomName}</h3>
             <p className="text-[12.5px] text-ink-500 capitalize mt-0.5">
-              {new Date(chunk.start).toLocaleDateString("es-ES", {
+              {new Date(start).toLocaleDateString("es-ES", {
                 weekday: "long",
                 day: "numeric",
                 month: "long",
@@ -499,14 +745,13 @@ function BookingSheet({
         </div>
 
         <div className="px-6 pb-6 pt-2 space-y-4">
-          {/* Time summary */}
           <div className="rounded-xl bg-ink-50 px-4 py-3 flex items-center justify-between">
             <div>
               <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500">
                 Inicio
               </p>
               <p className="text-[20px] font-semibold tabular font-mono text-ink-950">
-                {fmtHM(chunk.start)}
+                {fmtHM(start)}
               </p>
             </div>
             <ChevronRight className="h-4 w-4 text-ink-400" />
@@ -520,7 +765,6 @@ function BookingSheet({
             </div>
           </div>
 
-          {/* Email field */}
           <div>
             <label className="block text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1.5">
               Tu email
@@ -546,7 +790,6 @@ function BookingSheet({
             )}
           </div>
 
-          {/* Duration chips */}
           <div>
             <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-2">
               Duración
@@ -574,14 +817,13 @@ function BookingSheet({
                 );
               })}
             </div>
-            {maxMin < 30 && (
+            {maxMin < 60 && (
               <p className="mt-1.5 text-[11px] text-ink-500">
-                Hueco máximo: {fmtDur(maxMin)}
+                Hueco máximo desde {fmtHM(start)}: {fmtDur(maxMin)}
               </p>
             )}
           </div>
 
-          {/* Balance hint (only if cookie present) */}
           {balance && (
             <div
               className={
@@ -597,7 +839,6 @@ function BookingSheet({
                   <span>
                     Esta reserva supera tu saldo semanal en{" "}
                     {fmtDur(Math.abs(balance.remaining_minutes - duration))}.
-                    Habla con el equipo si necesitas ampliar.
                   </span>
                 </>
               ) : (

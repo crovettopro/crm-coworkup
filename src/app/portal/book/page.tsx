@@ -8,18 +8,24 @@ export const dynamic = "force-dynamic";
 export default async function PortalBookPage({
   searchParams,
 }: {
-  searchParams: Promise<{ date?: string; room?: string }>;
+  searchParams: Promise<{ date?: string; room?: string; coworking?: string }>;
 }) {
   const params = await searchParams;
   const cookie = await getPortalCookie();
   const supabase = await createClient();
 
-  // 1) Determinar coworking. Si llega ?room=, usamos su coworking. Si no,
-  //    usamos el de la cookie. Si no hay ninguno, mandamos a identificarse.
+  // 1) Determinar coworking. Prioridad: ?coworking= > ?room= > cookie.
+  //    Si no hay ninguno, mandamos a identificarse (necesitamos saber qué
+  //    salas mostrar). Antes el ?room= pre-seleccionaba una sola sala;
+  //    ahora con la vista de grid mostramos ambas siempre, y `room` sólo
+  //    se usa para resaltarla visualmente.
   let coworkingId: string | null = null;
   let initialRoomId: string | null = null;
 
-  if (params.room) {
+  if (params.coworking) {
+    coworkingId = params.coworking;
+  }
+  if (!coworkingId && params.room) {
     const { data: r } = await supabase
       .rpc("room_info", { p_room_id: params.room })
       .single();
@@ -28,6 +34,8 @@ export default async function PortalBookPage({
       initialRoomId = row.id;
       coworkingId = row.coworking_id;
     }
+  } else if (params.room) {
+    initialRoomId = params.room;
   }
   if (!coworkingId && cookie) {
     coworkingId = cookie.coworkingId;
