@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input, Label } from "@/components/ui/input";
 import { X, User } from "lucide-react";
-import { cn, formatCurrency } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 import Link from "next/link";
 
 type Extra = {
@@ -24,7 +24,6 @@ type Assignment = {
   client_id: string;
   client: ClientLite | null;
   start_date: string | null;
-  price: number | null;
 };
 
 export function ExtraTile({
@@ -44,7 +43,6 @@ export function ExtraTile({
 
   const [search, setSearch] = useState("");
   const [selectedClientId, setSelectedClientId] = useState<string>("");
-  const [price, setPrice] = useState<string>(String(extra.monthly_price ?? 0));
   const [startDate, setStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
 
   const isRented = extra.status === "rented" && assignment;
@@ -57,7 +55,6 @@ export function ExtraTile({
       client_id: selectedClientId,
       coworking_id: extra.coworking_id,
       extra_id: extra.id,
-      price: Number(price) || extra.monthly_price,
       start_date: startDate,
       status: "rented",
     });
@@ -87,28 +84,35 @@ export function ExtraTile({
     .filter((c) => !search || c.name.toLowerCase().includes(search.toLowerCase()))
     .slice(0, 80);
 
+  // Display name del cliente: completo si cabe, prioriza primer nombre + apellido
+  const displayName = assignment?.client?.name?.trim() || "";
+
   return (
     <>
       <button
         type="button"
         onClick={() => { setOpen(true); setError(null); }}
         className={cn(
-          "aspect-square w-full rounded border flex flex-col items-center justify-center p-1.5 transition-colors",
+          "aspect-square w-full rounded-md border flex flex-col items-center justify-center px-1.5 py-2 transition-colors",
           isRented
             ? "bg-ink-950 border-ink-950 text-white hover:bg-ink-800"
-            : "bg-white border-ink-200 text-ink-700 hover:border-ink-400",
+            : "bg-white border-ink-200 text-ink-700 hover:border-ink-400 hover:bg-ink-50",
         )}
-        title={isRented ? `Alquilado a ${assignment?.client?.name ?? "—"}` : "Disponible — clic para asignar"}
+        title={isRented ? `Alquilado a ${displayName}` : "Disponible — clic para asignar"}
       >
-        <p className="font-mono text-[13px] font-semibold leading-none">{extra.identifier}</p>
-        <p
-          className={cn(
-            "mt-1 text-[9.5px] truncate max-w-full leading-none",
-            isRented ? "text-white/70" : "text-ink-400",
-          )}
-        >
-          {isRented ? assignment?.client?.name?.split(" ")[0] ?? "ocupado" : "libre"}
+        <p className="font-mono text-[12px] font-semibold leading-none mb-1">
+          {extra.identifier}
         </p>
+        {isRented ? (
+          <p
+            className="text-[10.5px] font-medium leading-tight text-center text-white px-0.5 break-words line-clamp-2"
+            style={{ overflowWrap: "anywhere" }}
+          >
+            {displayName}
+          </p>
+        ) : (
+          <p className="text-[10px] text-ink-400 leading-none uppercase tracking-wider">libre</p>
+        )}
       </button>
 
       {open && (
@@ -128,10 +132,11 @@ export function ExtraTile({
                   <Link href={`/clients/${assignment?.client_id}`} className="font-display text-[15px] font-semibold text-ink-900 hover:underline inline-flex items-center gap-1">
                     <User className="h-3.5 w-3.5" /> {assignment?.client?.name}
                   </Link>
-                  <p className="text-[12px] text-ink-500 mt-1">
-                    Desde {assignment?.start_date ? new Date(assignment.start_date).toLocaleDateString("es-ES") : "—"} ·
-                    {" "}{formatCurrency(assignment?.price ?? 0)}/mes
-                  </p>
+                  {assignment?.start_date && (
+                    <p className="text-[12px] text-ink-500 mt-1">
+                      Desde {new Date(assignment.start_date).toLocaleDateString("es-ES")}
+                    </p>
+                  )}
                 </div>
                 {error && <p className="text-[12px] text-red-600">{error}</p>}
                 <div className="flex justify-end gap-2 pt-2">
@@ -175,15 +180,9 @@ export function ExtraTile({
                     </ul>
                   )}
                 </div>
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <Label>Precio €/mes</Label>
-                    <Input type="number" step="0.01" min="0" value={price} onChange={(e) => setPrice(e.target.value)} />
-                  </div>
-                  <div>
-                    <Label>Desde</Label>
-                    <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
-                  </div>
+                <div>
+                  <Label>Desde</Label>
+                  <Input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
                 </div>
                 {error && <p className="text-[12px] text-red-600">{error}</p>}
                 <div className="flex justify-end gap-2 pt-2">

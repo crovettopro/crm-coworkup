@@ -3,12 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { getProfile, getVisibleCoworkings, resolveCwFilter } from "@/lib/auth";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
-import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, THead, TBody, TR, TH, TD, EmptyState } from "@/components/ui/table";
 import { KpiGrid, Kpi } from "@/components/ui/kpi";
 import { ExtrasGrid } from "@/components/extras-grid";
-import { EXTRA_TYPE_LABEL } from "@/lib/types";
-import { formatCurrency, formatDate } from "@/lib/utils";
 import { Plus, MonitorSmartphone, Lock, Package } from "lucide-react";
 
 export const revalidate = 30;
@@ -28,7 +24,7 @@ export default async function ExtrasPage({
     supabase.from("extras").select("*").in("coworking_id", cwIds).order("type").order("identifier"),
     supabase
       .from("client_extras")
-      .select("id, extra_id, client_id, start_date, price, status, clients(id, name), extras(type, identifier)")
+      .select("id, extra_id, client_id, start_date, status, clients(id, name), extras(type, identifier)")
       .in("coworking_id", cwIds)
       .eq("status", "rented")
       .order("start_date", { ascending: false }),
@@ -44,10 +40,6 @@ export default async function ExtrasPage({
   const lockers = (extras ?? []).filter((e: any) => e.type === "locker");
   const screens = (extras ?? []).filter((e: any) => e.type === "screen");
   const others = (extras ?? []).filter((e: any) => e.type !== "locker" && e.type !== "screen");
-  const monthlyIncome = (assignments ?? []).reduce((acc: number, a: any) => acc + Number(a.price ?? 0), 0);
-
-  const assignmentByExtraId = new Map<string, any>();
-  (assignments ?? []).forEach((a: any) => assignmentByExtraId.set(a.extra_id, a));
 
   const lockersRented = lockers.filter((e: any) => e.status === "rented").length;
   const screensRented = screens.filter((e: any) => e.status === "rented").length;
@@ -84,9 +76,9 @@ export default async function ExtrasPage({
         <Kpi
           accent
           icon={<Package className="h-3 w-3" />}
-          label="Ingresos mensuales"
-          value={formatCurrency(monthlyIncome)}
-          hint={`${totalRented} de ${totalItems} items en uso`}
+          label="Total en uso"
+          value={`${totalRented}/${totalItems}`}
+          hint="items asignados"
         />
       </KpiGrid>
 
@@ -94,56 +86,18 @@ export default async function ExtrasPage({
         lockers={lockers}
         monitors={screens}
         others={others}
-        assignments={(assignments ?? []) as any}
+        assignments={(assignments ?? []).map((a: any) => ({
+          id: a.id,
+          extra_id: a.extra_id,
+          client_id: a.client_id,
+          start_date: a.start_date,
+          // La query devuelve `clients` (relación). Lo normalizamos a `client`
+          // (singular) que es lo que espera ExtraTile para mostrar el nombre.
+          client: a.clients ? { id: a.clients.id, name: a.clients.name } : null,
+        }))}
         clients={(clients ?? []).map((c: any) => ({ id: c.id, name: c.name }))}
         initialTab="lockers"
       />
-
-      <Card>
-        <CardHeader>
-          <CardTitle>Alquileres en curso</CardTitle>
-          <span className="text-[12px] text-ink-500">{assignments?.length ?? 0}</span>
-        </CardHeader>
-        <CardBody className="p-0">
-          {!assignments || assignments.length === 0 ? (
-            <EmptyState title="Sin alquileres en curso" />
-          ) : (
-            <Table>
-              <THead>
-                <TR>
-                  <TH>Cliente</TH>
-                  <TH>Item</TH>
-                  <TH className="text-right">Precio</TH>
-                  <TH>Desde</TH>
-                </TR>
-              </THead>
-              <TBody>
-                {assignments.map((a: any) => (
-                  <TR key={a.id}>
-                    <TD>
-                      <Link href={`/clients/${a.client_id}`} className="text-[13px] font-medium text-ink-950 hover:underline">
-                        {a.clients?.name ?? "—"}
-                      </Link>
-                    </TD>
-                    <TD className="text-[12.5px]">
-                      <span className="text-ink-700">
-                        {EXTRA_TYPE_LABEL[a.extras?.type as keyof typeof EXTRA_TYPE_LABEL]}
-                      </span>{" "}
-                      ·{" "}
-                      <span className="font-mono text-ink-950">{a.extras?.identifier}</span>
-                    </TD>
-                    <TD className="text-right tabular text-[13px] font-medium text-ink-950">
-                      {formatCurrency(a.price)}
-                      <span className="text-[11px] text-ink-500"> /mes</span>
-                    </TD>
-                    <TD className="text-[12.5px] text-ink-500 font-mono">{formatDate(a.start_date)}</TD>
-                  </TR>
-                ))}
-              </TBody>
-            </Table>
-          )}
-        </CardBody>
-      </Card>
     </div>
   );
 }

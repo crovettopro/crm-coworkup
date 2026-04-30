@@ -23,7 +23,6 @@ type Assignment = {
   client_id: string;
   client: { id: string; name: string } | null;
   start_date: string | null;
-  price: number | null;
 };
 
 export function ExtrasGrid({
