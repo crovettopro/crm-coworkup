@@ -16,13 +16,10 @@ type Room = { id: string; name: string; capacity: number | null; color: string |
 type Booking = { room_id: string; start_at: string; end_at: string };
 type Balance = { included_minutes: number; used_minutes: number; remaining_minutes: number } | null;
 
-const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 22;
 const SLOT_MIN = 30;
 const SLOTS_PER_HOUR = 60 / SLOT_MIN; // 2
-const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR; // 28
 const ROW_PX = 44;
-const HEADER_PX = 38;
+const HEADER_PX = 40;
 const TIME_COL_PX = 56;
 const DURATIONS = [30, 60, 90, 120, 180, 240];
 
@@ -49,23 +46,15 @@ function isSameDay(a: Date, b: Date) {
     a.getDate() === b.getDate()
   );
 }
-function slotStartIdx(d: Date) {
-  return (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR + Math.floor(d.getMinutes() / SLOT_MIN);
+function minutesOfDay(d: Date) {
+  return d.getHours() * 60 + d.getMinutes();
 }
-function slotEndIdx(d: Date) {
-  return (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR + Math.ceil(d.getMinutes() / SLOT_MIN);
-}
-function slotLabel(idx: number) {
-  const h = DAY_START_HOUR + Math.floor(idx / SLOTS_PER_HOUR);
-  const m = (idx % SLOTS_PER_HOUR) * SLOT_MIN;
-  return `${pad(h)}:${pad(m)}`;
-}
-function slotStartTimestamp(date: string, idx: number) {
+function dateAtMin(date: string, minOfDay: number) {
   const d = new Date(date + "T00:00:00");
-  const totalMin = DAY_START_HOUR * 60 + idx * SLOT_MIN;
-  d.setHours(Math.floor(totalMin / 60), totalMin % 60, 0, 0);
-  return d.getTime();
+  d.setHours(Math.floor(minOfDay / 60), minOfDay % 60, 0, 0);
+  return d;
 }
+
 function dayPills(today: Date, count = 7) {
   const pills: { date: string; label: string; sub: string }[] = [];
   for (let i = 0; i < count; i++) {
@@ -95,6 +84,8 @@ export function BookFlow({
   date,
   balance,
   initialRoomId,
+  openMin,
+  closeMin,
 }: {
   prefilledEmail: string | null;
   prefilledName: string | null;
@@ -104,6 +95,8 @@ export function BookFlow({
   date: string;
   balance: Balance;
   initialRoomId?: string;
+  openMin: number;
+  closeMin: number;
 }) {
   const router = useRouter();
   const [pending, setPending] = useState<ClickedSlot | null>(null);
@@ -123,6 +116,7 @@ export function BookFlow({
     () => isSameDay(new Date(date + "T12:00:00"), new Date()),
     [date],
   );
+  const totalSlots = Math.max(0, Math.floor((closeMin - openMin) / SLOT_MIN));
 
   function setDate(newDate: string) {
     setPending(null);
@@ -133,7 +127,7 @@ export function BookFlow({
 
   // Build occupancy + per-room sorted bookings (start ms)
   const { occupied, perRoomSorted } = useMemo(() => {
-    const occ: boolean[][] = Array(TOTAL_SLOTS)
+    const occ: boolean[][] = Array(totalSlots)
       .fill(null)
       .map(() => Array(rooms.length).fill(false));
     const sortedByRoom = new Map<string, { start: number; end: number }[]>();
@@ -142,9 +136,9 @@ export function BookFlow({
       if (colIdx < 0) continue;
       const start = new Date(b.start_at);
       const end = new Date(b.end_at);
-      const ss = slotStartIdx(start);
-      const se = slotEndIdx(end);
-      for (let s = Math.max(0, ss); s < Math.min(TOTAL_SLOTS, se); s++) {
+      const ss = Math.floor((minutesOfDay(start) - openMin) / SLOT_MIN);
+      const se = Math.ceil((minutesOfDay(end) - openMin) / SLOT_MIN);
+      for (let s = Math.max(0, ss); s < Math.min(totalSlots, se); s++) {
         occ[s][colIdx] = true;
       }
       const arr = sortedByRoom.get(b.room_id) ?? [];
@@ -153,20 +147,19 @@ export function BookFlow({
     }
     for (const arr of sortedByRoom.values()) arr.sort((a, b) => a.start - b.start);
     return { occupied: occ, perRoomSorted: sortedByRoom };
-  }, [bookings, rooms]);
+  }, [bookings, rooms, openMin, totalSlots]);
 
-  // For "is past" rendering on today
   const nowMs = Date.now();
   function isSlotPast(slotIdx: number) {
     if (!isToday) return false;
-    return slotStartTimestamp(date, slotIdx) + SLOT_MIN * 60 * 1000 <= nowMs;
+    const slotStart = dateAtMin(date, openMin + slotIdx * SLOT_MIN).getTime();
+    return slotStart + SLOT_MIN * 60 * 1000 <= nowMs;
   }
 
   function openSlot(roomId: string, slotIdx: number) {
-    const start = slotStartTimestamp(date, slotIdx);
-    // Find next booking in this room after `start` to compute maxEnd
+    const start = dateAtMin(date, openMin + slotIdx * SLOT_MIN).getTime();
     const list = perRoomSorted.get(roomId) ?? [];
-    let maxEnd = slotStartTimestamp(date, TOTAL_SLOTS); // end of day
+    let maxEnd = dateAtMin(date, closeMin).getTime();
     for (const b of list) {
       if (b.start > start) {
         maxEnd = Math.min(maxEnd, b.start);
@@ -279,7 +272,7 @@ export function BookFlow({
                 <div className="text-[10.5px] uppercase tracking-[0.06em] font-medium opacity-80 capitalize">
                   {p.label}
                 </div>
-                <div className="text-[14px] font-semibold capitalize mt-0.5">
+                <div className="text-[14px] font-semibold capitalize mt-0.5 tabular-nums">
                   {p.sub}
                 </div>
               </button>
@@ -298,6 +291,8 @@ export function BookFlow({
         showCurrentTimeLine={isToday}
         date={date}
         highlightRoomId={initialRoomId}
+        openMin={openMin}
+        closeMin={closeMin}
       />
 
       {/* Booking sheet */}
@@ -347,9 +342,10 @@ export function DayGrid({
   onSlotClick,
   onBookingClick,
   showCurrentTimeLine,
-  date,
   highlightRoomId,
   showBookingTitles,
+  openMin,
+  closeMin,
 }: {
   rooms: Room[];
   occupied: boolean[][];
@@ -361,6 +357,8 @@ export function DayGrid({
   date: string;
   highlightRoomId?: string;
   showBookingTitles?: boolean;
+  openMin: number;
+  closeMin: number;
 }) {
   if (rooms.length === 0) {
     return (
@@ -372,21 +370,34 @@ export function DayGrid({
     );
   }
 
-  const totalHeight = HEADER_PX + TOTAL_SLOTS * ROW_PX;
+  const totalSlots = Math.max(0, Math.floor((closeMin - openMin) / SLOT_MIN));
+  const totalHeight = HEADER_PX + totalSlots * ROW_PX;
   const gridStyle: React.CSSProperties = {
     display: "grid",
     gridTemplateColumns: `${TIME_COL_PX}px repeat(${rooms.length}, minmax(0, 1fr))`,
-    gridTemplateRows: `${HEADER_PX}px repeat(${TOTAL_SLOTS}, ${ROW_PX}px)`,
+    gridTemplateRows: `${HEADER_PX}px repeat(${totalSlots}, ${ROW_PX}px)`,
     height: totalHeight,
   };
 
-  // Current-time line position (only when showCurrentTimeLine)
-  const now = new Date();
+  // Helpers
+  function slotLabel(idx: number) {
+    const total = openMin + idx * SLOT_MIN;
+    return `${pad(Math.floor(total / 60))}:${pad(total % 60)}`;
+  }
+  function slotStartIdx(d: Date) {
+    return Math.floor((minutesOfDay(d) - openMin) / SLOT_MIN);
+  }
+  function slotEndIdx(d: Date) {
+    return Math.ceil((minutesOfDay(d) - openMin) / SLOT_MIN);
+  }
+
+  // Current-time line
   let nowOffsetPx: number | null = null;
   if (showCurrentTimeLine) {
-    const h = now.getHours();
-    if (h >= DAY_START_HOUR && h < DAY_END_HOUR) {
-      const slot = (h - DAY_START_HOUR) * SLOTS_PER_HOUR + now.getMinutes() / SLOT_MIN;
+    const now = new Date();
+    const m = minutesOfDay(now);
+    if (m >= openMin && m <= closeMin) {
+      const slot = (m - openMin) / SLOT_MIN;
       nowOffsetPx = HEADER_PX + slot * ROW_PX;
     }
   }
@@ -394,24 +405,23 @@ export function DayGrid({
   return (
     <div className="rounded-xl border border-ink-200 bg-white overflow-hidden shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
       <div className="relative" style={gridStyle}>
-        {/* Header: empty time corner */}
+        {/* Header: time corner */}
         <div
-          className="border-b border-r border-ink-200 bg-ink-50/60 flex items-center justify-center text-[10px] font-medium uppercase tracking-[0.06em] text-ink-500"
+          className="border-b border-r border-ink-200 bg-ink-50/60 flex items-center justify-center text-[10px] font-medium uppercase tracking-[0.08em] text-ink-500"
           style={{ gridRow: 1, gridColumn: 1 }}
         >
           Hora
         </div>
 
-        {/* Header: room names */}
+        {/* Header: room columns (todas con border-r para que la última también tenga línea) */}
         {rooms.map((r, i) => {
           const isHighlight = highlightRoomId === r.id;
           return (
             <div
               key={r.id}
               className={
-                "border-b border-ink-200 px-3 flex items-center gap-2 relative " +
-                (i < rooms.length - 1 ? "border-r border-ink-200 " : "") +
-                (isHighlight ? "bg-brand-50/60" : "bg-ink-50/30")
+                "border-b border-r border-ink-200 px-3 flex items-center gap-2 relative " +
+                (isHighlight ? "bg-brand-50/70" : "bg-ink-50/30")
               }
               style={{ gridRow: 1, gridColumn: i + 2 }}
             >
@@ -419,9 +429,11 @@ export function DayGrid({
                 className="inline-block h-2.5 w-2.5 rounded-full shrink-0"
                 style={{ backgroundColor: r.color ?? "#6366f1" }}
               />
-              <p className="text-[13px] font-semibold text-ink-950 truncate">{r.name}</p>
+              <p className="text-[13px] font-semibold text-ink-950 truncate tracking-tight">
+                {r.name}
+              </p>
               {r.capacity ? (
-                <span className="text-[10.5px] text-ink-500 font-mono inline-flex items-center gap-0.5 ml-auto">
+                <span className="text-[10.5px] text-ink-500 tabular-nums inline-flex items-center gap-0.5 ml-auto">
                   <Users className="h-2.5 w-2.5" /> {r.capacity}
                 </span>
               ) : null}
@@ -430,15 +442,18 @@ export function DayGrid({
         })}
 
         {/* Time labels + cells */}
-        {Array.from({ length: TOTAL_SLOTS }).map((_, slotIdx) => (
+        {Array.from({ length: totalSlots }).map((_, slotIdx) => (
           <SlotRow
             key={slotIdx}
             slotIdx={slotIdx}
+            label={slotLabel(slotIdx)}
+            isHourMark={(openMin + slotIdx * SLOT_MIN) % 60 === 0}
             rooms={rooms}
             occupied={occupied}
             isSlotPast={isSlotPast?.(slotIdx) ?? false}
             onSlotClick={onSlotClick}
             highlightRoomId={highlightRoomId}
+            isLastRow={slotIdx === totalSlots - 1}
           />
         ))}
 
@@ -451,7 +466,7 @@ export function DayGrid({
             const start = new Date(b.start_at);
             const end = new Date(b.end_at);
             const ss = Math.max(0, slotStartIdx(start));
-            const se = Math.min(TOTAL_SLOTS, slotEndIdx(end));
+            const se = Math.min(totalSlots, slotEndIdx(end));
             if (se <= ss) return null;
             return (
               <BookingBlock
@@ -470,12 +485,7 @@ export function DayGrid({
         {nowOffsetPx !== null && (
           <div
             className="pointer-events-none absolute z-20"
-            style={{
-              top: nowOffsetPx,
-              left: TIME_COL_PX,
-              right: 0,
-              height: 0,
-            }}
+            style={{ top: nowOffsetPx, left: TIME_COL_PX, right: 0, height: 0 }}
           >
             <div className="relative">
               <div className="absolute -left-1.5 -top-[3px] h-1.5 w-1.5 rounded-full bg-red-500" />
@@ -490,39 +500,56 @@ export function DayGrid({
 
 function SlotRow({
   slotIdx,
+  label,
+  isHourMark,
   rooms,
   occupied,
   isSlotPast,
   onSlotClick,
   highlightRoomId,
+  isLastRow,
 }: {
   slotIdx: number;
+  label: string;
+  isHourMark: boolean;
   rooms: Room[];
   occupied: boolean[][];
   isSlotPast: boolean;
   onSlotClick: (roomId: string, slotIdx: number) => void;
   highlightRoomId?: string;
+  isLastRow: boolean;
 }) {
-  const isHourMark = slotIdx % SLOTS_PER_HOUR === 0;
+  // Time column: only label hour marks. Sans tabular-nums, lighter design.
+  const timeCellClass = [
+    "border-r border-ink-200",
+    "px-2 flex items-start justify-end pt-1",
+    isHourMark
+      ? "border-t border-ink-200"
+      : "border-t border-dashed border-ink-100",
+    isLastRow ? "border-b border-ink-200" : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+
   return (
     <>
       <div
-        className={
-          "border-r border-ink-200 px-2 flex items-start justify-end pt-1 text-[10.5px] font-mono tabular text-ink-500 " +
-          (isHourMark ? "border-t border-ink-200 font-semibold text-ink-700" : "")
-        }
+        className={timeCellClass}
         style={{ gridRow: slotIdx + 2, gridColumn: 1 }}
       >
-        {isHourMark ? slotLabel(slotIdx) : ""}
+        {isHourMark && (
+          <span className="text-[12px] font-medium tabular-nums tracking-tight text-ink-700 leading-none">
+            {label}
+          </span>
+        )}
       </div>
       {rooms.map((r, i) => {
         const isOcc = occupied[slotIdx]?.[i];
-        const isLastCol = i === rooms.length - 1;
         const isHighlight = highlightRoomId === r.id;
         const cellClass = [
-          "relative",
-          !isLastCol ? "border-r border-ink-200" : "",
-          isHourMark ? "border-t border-ink-200" : "border-t border-ink-100",
+          "relative border-r border-ink-200",
+          isHourMark ? "border-t border-ink-200" : "border-t border-dashed border-ink-100",
+          isLastRow ? "border-b border-ink-200" : "",
           isHighlight ? "bg-brand-50/30" : "",
         ]
           .filter(Boolean)
@@ -537,7 +564,7 @@ function SlotRow({
               <button
                 onClick={() => onSlotClick(r.id, slotIdx)}
                 className="absolute inset-0 transition-colors hover:bg-emerald-50 focus:bg-emerald-50 outline-none"
-                aria-label={`Reservar ${r.name} a las ${slotLabel(slotIdx)}`}
+                aria-label={`Reservar ${r.name} a las ${label}`}
               />
             )}
             {isSlotPast && (
@@ -653,12 +680,12 @@ function BookingBlock({
                 {initials(bookingPersonName(booking))}
               </span>
             )}
-            <span className="truncate text-[11.5px] font-semibold leading-tight">
+            <span className="truncate text-[11.5px] font-semibold leading-tight tracking-tight">
               {bookingTitle(booking)}
             </span>
           </div>
           {heightRows >= 2 && (
-            <span className="text-[10px] opacity-70 font-mono leading-tight mt-0.5">
+            <span className="text-[10px] opacity-70 tabular-nums leading-tight mt-0.5 tracking-tight">
               {start.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}–
               {end.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" })}
             </span>
@@ -674,7 +701,7 @@ function BookingBlock({
 }
 
 // =====================================================================
-// BookingSheet (modal): reusa estilos previos, ahora con email field
+// BookingSheet (modal): igual que antes con email field
 // =====================================================================
 function BookingSheet({
   start,
@@ -750,7 +777,7 @@ function BookingSheet({
               <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500">
                 Inicio
               </p>
-              <p className="text-[20px] font-semibold tabular font-mono text-ink-950">
+              <p className="text-[20px] font-semibold tabular-nums text-ink-950 tracking-tight">
                 {fmtHM(start)}
               </p>
             </div>
@@ -759,7 +786,7 @@ function BookingSheet({
               <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500">
                 Fin
               </p>
-              <p className="text-[20px] font-semibold tabular font-mono text-ink-950">
+              <p className="text-[20px] font-semibold tabular-nums text-ink-950 tracking-tight">
                 {fmtHM(end)}
               </p>
             </div>

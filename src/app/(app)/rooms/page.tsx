@@ -28,6 +28,15 @@ export default async function RoomsPage({
     .order("sort_order", { ascending: true })
     .order("name", { ascending: true });
 
+  // Horario de apertura del coworking activo
+  const { data: cwRow } = await supabase
+    .from("coworkings")
+    .select("open_min, close_min")
+    .eq("id", activeCw)
+    .single();
+  const openMin = (cwRow as any)?.open_min ?? 480;
+  const closeMin = (cwRow as any)?.close_min ?? 1320;
+
   const dayStart = `${date}T00:00:00`;
   const dayEnd = `${date}T23:59:59`;
   const { data: bookings } = await supabase
@@ -57,6 +66,8 @@ export default async function RoomsPage({
         bookings={(bookings ?? []) as any}
         clients={(clients ?? []) as any}
         coworkingId={activeCw}
+        openMin={openMin}
+        closeMin={closeMin}
       />
     </div>
   );

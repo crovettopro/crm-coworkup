@@ -33,11 +33,7 @@ type Booking = {
 
 type ClientLite = { id: string; name: string; company_name: string | null; coworking_id: string };
 
-const DAY_START_HOUR = 8;
-const DAY_END_HOUR = 22;
 const SLOT_MIN = 30;
-const SLOTS_PER_HOUR = 60 / SLOT_MIN;
-const TOTAL_SLOTS = (DAY_END_HOUR - DAY_START_HOUR) * SLOTS_PER_HOUR;
 
 function pad(n: number) {
   return String(n).padStart(2, "0");
@@ -49,17 +45,11 @@ function dayLabel(date: string) {
   const d = new Date(date + "T12:00:00");
   return d.toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" });
 }
-function slotStartIdx(d: Date) {
-  return (
-    (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR +
-    Math.floor(d.getMinutes() / SLOT_MIN)
-  );
+function minutesOfDay(d: Date) {
+  return d.getHours() * 60 + d.getMinutes();
 }
-function slotEndIdx(d: Date) {
-  return (
-    (d.getHours() - DAY_START_HOUR) * SLOTS_PER_HOUR +
-    Math.ceil(d.getMinutes() / SLOT_MIN)
-  );
+function formatMin(min: number) {
+  return `${pad(Math.floor(min / 60))}:${pad(min % 60)}`;
 }
 
 export function RoomsBoard({
@@ -68,13 +58,19 @@ export function RoomsBoard({
   bookings,
   clients,
   coworkingId,
+  openMin,
+  closeMin,
 }: {
   date: string;
   rooms: Room[];
   bookings: Booking[];
   clients: ClientLite[];
   coworkingId: string;
+  openMin: number;
+  closeMin: number;
 }) {
+  const totalSlots = Math.max(0, Math.floor((closeMin - openMin) / SLOT_MIN));
+  const openHours = (closeMin - openMin) / 60;
   const router = useRouter();
   const [dialogState, setDialogState] = useState<
     | { mode: "create"; roomId?: string; startSlot?: number }
@@ -99,7 +95,7 @@ export function RoomsBoard({
       const ms = new Date(b.end_at).getTime() - new Date(b.start_at).getTime();
       return acc + ms / 60000;
     }, 0);
-    const capacityMin = rooms.length * (DAY_END_HOUR - DAY_START_HOUR) * 60;
+    const capacityMin = rooms.length * (closeMin - openMin);
     const utilization = capacityMin > 0 ? Math.round((totalMin / capacityMin) * 100) : 0;
     const walkIns = bookings.filter((b) => b.source === "walk_in").length;
     const clientBookings = bookings.filter((b) => b.source === "client").length;
@@ -116,21 +112,21 @@ export function RoomsBoard({
 
   // Occupancy matrix (slot × room)
   const occupied = useMemo(() => {
-    const occ: boolean[][] = Array(TOTAL_SLOTS)
+    const occ: boolean[][] = Array(totalSlots)
       .fill(null)
       .map(() => Array(rooms.length).fill(false));
     for (const b of bookings) {
       if (b.status !== "confirmed") continue;
       const colIdx = rooms.findIndex((r) => r.id === b.room_id);
       if (colIdx < 0) continue;
-      const ss = slotStartIdx(new Date(b.start_at));
-      const se = slotEndIdx(new Date(b.end_at));
-      for (let s = Math.max(0, ss); s < Math.min(TOTAL_SLOTS, se); s++) {
+      const ss = Math.floor((minutesOfDay(new Date(b.start_at)) - openMin) / SLOT_MIN);
+      const se = Math.ceil((minutesOfDay(new Date(b.end_at)) - openMin) / SLOT_MIN);
+      for (let s = Math.max(0, ss); s < Math.min(totalSlots, se); s++) {
         occ[s][colIdx] = true;
       }
     }
     return occ;
-  }, [bookings, rooms]);
+  }, [bookings, rooms, openMin, totalSlots]);
 
   function goDay(offsetDays: number) {
     const d = new Date(date + "T12:00:00");
@@ -206,12 +202,12 @@ export function RoomsBoard({
           <StatCard
             label="Horas reservadas"
             value={`${stats.hours.toFixed(stats.hours % 1 === 0 ? 0 : 1)}h`}
-            sub={`Sobre ${rooms.length * (DAY_END_HOUR - DAY_START_HOUR)}h disponibles`}
+            sub={`Sobre ${(rooms.length * openHours).toFixed(openHours % 1 === 0 ? 0 : 1)}h disponibles`}
           />
           <StatCard
             label="Ocupación"
             value={`${stats.utilization}%`}
-            sub="del horario 08:00 – 22:00"
+            sub={`del horario ${formatMin(openMin)} – ${formatMin(closeMin)}`}
             accent={stats.utilization >= 50 ? "ok" : undefined}
           />
           <StatCard
@@ -236,6 +232,8 @@ export function RoomsBoard({
         showCurrentTimeLine={isToday}
         date={date}
         showBookingTitles={true}
+        openMin={openMin}
+        closeMin={closeMin}
       />
 
       {dialogState && (
@@ -251,7 +249,7 @@ export function RoomsBoard({
           }
           existing={dialogState.mode === "edit" ? dialogState.booking : undefined}
           slotMin={SLOT_MIN}
-          dayStartHour={DAY_START_HOUR}
+          dayStartHour={openMin / 60}
           onClose={() => setDialogState(null)}
           onSaved={() => {
             setDialogState(null);
