@@ -24,9 +24,11 @@ export default async function RoomsQrPage() {
     coworking_name: cwMap.get(r.coworking_id) ?? "",
   }));
 
+  // IMPORTANTE: nunca usar VERCEL_URL aquí — es la URL del deploy actual,
+  // y en previews queda hardcodeada en el QR impreso (que entonces apunta a
+  // ese build viejo para siempre). Usar siempre el dominio de producción.
   const baseUrl =
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : "https://crm-coworkup.vercel.app");
+    process.env.NEXT_PUBLIC_SITE_URL || "https://crm-coworkup.vercel.app";
 
   return <QrPosters rooms={enriched} baseUrl={baseUrl} />;
 }
