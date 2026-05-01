@@ -62,7 +62,7 @@ export default async function ClientDetailPage({
   ] = await Promise.all([
     supabase.from("client_derived_status").select("*").eq("client_id", id).maybeSingle(),
     supabase.from("subscriptions").select("*").eq("client_id", id).order("start_date", { ascending: false }),
-    supabase.from("payments").select("*").eq("client_id", id).order("month", { ascending: false }).limit(24),
+    supabase.from("payments").select("*").eq("client_id", id).order("expected_payment_date", { ascending: false, nullsFirst: false }).limit(24),
     supabase.from("invoices").select("*").eq("client_id", id).order("issue_date", { ascending: false, nullsFirst: false }).limit(24),
     supabase.from("client_extras").select("*, extras(type, identifier)").eq("client_id", id),
     supabase.from("deposits").select("*").eq("client_id", id),
@@ -334,7 +334,7 @@ export default async function ClientDetailPage({
                 <Table>
                   <THead>
                     <TR>
-                      <TH>Mes</TH>
+                      <TH>Fecha</TH>
                       <TH>Concepto</TH>
                       <TH className="text-right">Esperado</TH>
                       <TH className="text-right">Pagado</TH>
@@ -352,7 +352,7 @@ export default async function ClientDetailPage({
                         "bg-ink-400";
                       return (
                         <TR key={p.id}>
-                          <TD className="text-ink-500">{formatDate(p.month)}</TD>
+                          <TD className="text-ink-500">{formatDate(p.expected_payment_date ?? p.month)}</TD>
                           <TD className="text-[12.5px] text-ink-700">{p.concept ?? "—"}</TD>
                           <TD className="text-right tabular">{formatCurrency(p.expected_amount)}</TD>
                           <TD className="text-right tabular text-ink-950 font-medium">{formatCurrency(p.paid_amount)}</TD>

@@ -40,14 +40,30 @@ export default async function RenewalsPage() {
     .not("end_date", "is", null)
     .order("end_date");
 
+  // Mapa: client_id → max(end_date) entre sus subs activas. Sirve para detectar cambio de plan:
+  // si un cliente tiene una sub vencida pero también otra posterior, no es renovación pendiente
+  // sino que se cambió de plan.
+  const latestEndByClient = new Map<string, string>();
+  for (const s of (subs ?? []) as any[]) {
+    if (!s.end_date) continue;
+    const prev = latestEndByClient.get(s.client_id);
+    if (!prev || s.end_date > prev) latestEndByClient.set(s.client_id, s.end_date);
+  }
+
   const upcoming = (subs ?? []).filter((s: any) => {
     if (!s.end_date) return false;
-    return s.end_date >= todayISO && s.end_date <= horizonISO && (s.client?.status !== "inactive");
+    if (s.client?.status === "inactive") return false;
+    if (s.end_date < todayISO || s.end_date > horizonISO) return false;
+    // Si el cliente ya tiene una sub posterior (cambio de plan), no la mostramos como próxima
+    return latestEndByClient.get(s.client_id) === s.end_date;
   });
 
   const expired = (subs ?? []).filter((s: any) => {
     if (!s.end_date) return false;
-    return s.end_date < todayISO && s.end_date >= expiredCutoffISO && (s.client?.status !== "inactive");
+    if (s.client?.status === "inactive") return false;
+    if (s.end_date >= todayISO || s.end_date < expiredCutoffISO) return false;
+    // Excluir si hay otra sub posterior del mismo cliente (cambio de plan, no pendiente de renovar)
+    return latestEndByClient.get(s.client_id) === s.end_date;
   });
 
   return (
