@@ -43,10 +43,10 @@ export default async function PortalLayout({
               </>
             ) : (
               <Link
-                href="/portal/login"
+                href="/portal"
                 className="text-[12px] font-medium text-ink-700 hover:text-ink-950 hover:underline"
               >
-                Identifícate
+                Selecciona tu nombre
               </Link>
             )}
           </div>

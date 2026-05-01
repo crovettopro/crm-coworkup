@@ -4,7 +4,7 @@ import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { Search, Loader2, Mail } from "lucide-react";
+import { Search, Loader2, ArrowLeft } from "lucide-react";
 
 type Client = { id: string; name: string };
 
@@ -149,11 +149,11 @@ export function SelectClientFlow({
 
         <div className="mt-6 text-center">
           <Link
-            href={`/portal/login?next=${encodeURIComponent(nextUrl)}`}
+            href="/portal"
             className="inline-flex items-center gap-1.5 text-[12.5px] text-ink-600 hover:text-ink-900 underline-offset-4 hover:underline"
           >
-            <Mail className="h-3.5 w-3.5" />
-            ¿No estás en el local? Identifícate por email
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Cambiar de coworking
           </Link>
         </div>
 
