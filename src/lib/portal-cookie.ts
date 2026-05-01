@@ -1,8 +1,16 @@
 import { cookies } from "next/headers";
+import type { NextResponse } from "next/server";
 import { createHmac, timingSafeEqual } from "crypto";
 
 const COOKIE_NAME = "portal_id";
 const MAX_AGE_DAYS = 30;
+const COOKIE_OPTS = {
+  httpOnly: true,
+  secure: process.env.NODE_ENV === "production",
+  sameSite: "lax" as const,
+  path: "/",
+  maxAge: 60 * 60 * 24 * MAX_AGE_DAYS,
+};
 
 function secret() {
   const s = process.env.PORTAL_COOKIE_SECRET;
@@ -28,20 +36,28 @@ export type PortalIdentity = {
   iat: number;
 };
 
-export async function setPortalCookie(identity: Omit<PortalIdentity, "iat">) {
+function buildCookieValue(identity: Omit<PortalIdentity, "iat">): string {
   const payload: PortalIdentity = { ...identity, iat: Date.now() };
   const encoded = Buffer.from(JSON.stringify(payload)).toString("base64url");
   const sig = sign(encoded);
-  const value = `${encoded}.${sig}`;
+  return `${encoded}.${sig}`;
+}
 
+export async function setPortalCookie(identity: Omit<PortalIdentity, "iat">) {
+  const value = buildCookieValue(identity);
   const store = await cookies();
-  store.set(COOKIE_NAME, value, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
-    path: "/",
-    maxAge: 60 * 60 * 24 * MAX_AGE_DAYS,
-  });
+  store.set(COOKIE_NAME, value, COOKIE_OPTS);
+}
+
+// Variante para Route Handlers: setea la cookie directamente sobre la
+// NextResponse, garantizando que el Set-Cookie viaja con la respuesta.
+// Más fiable que cookies().set() en algunos escenarios de Next 15.
+export function setPortalCookieOnResponse(
+  response: NextResponse,
+  identity: Omit<PortalIdentity, "iat">,
+) {
+  const value = buildCookieValue(identity);
+  response.cookies.set(COOKIE_NAME, value, COOKIE_OPTS);
 }
 
 export async function getPortalCookie(): Promise<PortalIdentity | null> {

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { setPortalCookie } from "@/lib/portal-cookie";
+import { setPortalCookieOnResponse } from "@/lib/portal-cookie";
 
 export const runtime = "nodejs";
 
@@ -56,13 +56,13 @@ export async function POST(request: Request) {
   }
 
   const row = data as any;
-  await setPortalCookie({
+  const response = NextResponse.json({ ok: true, name: row.client_name });
+  setPortalCookieOnResponse(response, {
     email: row.client_email ?? "",
     clientId: row.client_id,
     name: row.client_name,
     coworkingId,
     coworkingName: row.coworking_name ?? "",
   });
-
-  return NextResponse.json({ ok: true, name: row.client_name });
+  return response;
 }
