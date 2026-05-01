@@ -175,8 +175,11 @@ export function BookFlow({
 
   async function handleConfirm() {
     if (!pending) return;
+    // Si ya estamos identificados (cookie del selector), no exigimos email.
+    // El endpoint usará cookie.clientId vía quick_book_room_by_client_id.
+    const identifiedByCookie = !!prefilledName;
     const email = emailInput.trim().toLowerCase();
-    if (!email || !email.includes("@")) {
+    if (!identifiedByCookie && (!email || !email.includes("@"))) {
       setError("Escribe tu email para confirmar.");
       return;
     }
@@ -192,7 +195,9 @@ export function BookFlow({
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        email,
+        // Si estamos identificados por cookie, omitimos email — el endpoint
+        // usará cookie.clientId. Si no, mandamos email.
+        ...(identifiedByCookie ? {} : { email }),
         room_id: pending.roomId,
         start_at: new Date(start).toISOString(),
         end_at: new Date(end).toISOString(),
@@ -305,6 +310,7 @@ export function BookFlow({
           balance={balance}
           email={emailInput}
           setEmail={setEmailInput}
+          identifiedName={prefilledName}
           rememberedName={prefilledEmail ? prefilledName : null}
           roomName={rooms.find((r) => r.id === pending.roomId)?.name ?? ""}
           busy={busy}
@@ -712,6 +718,7 @@ function BookingSheet({
   email,
   setEmail,
   rememberedName,
+  identifiedName,
   roomName,
   busy,
   error,
@@ -726,6 +733,7 @@ function BookingSheet({
   email: string;
   setEmail: (e: string) => void;
   rememberedName: string | null;
+  identifiedName: string | null;
   roomName: string;
   busy: boolean;
   error: string | null;
@@ -792,30 +800,44 @@ function BookingSheet({
             </div>
           </div>
 
-          <div>
-            <label className="block text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1.5">
-              Tu email
-            </label>
-            <div className="relative">
-              <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-400" />
-              <input
-                type="email"
-                inputMode="email"
-                autoComplete="email"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-                required
-                placeholder="tu@email.com"
-                className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-[14.5px] text-ink-950 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
-              />
+          {identifiedName ? (
+            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 flex items-center gap-2.5">
+              <span className="grid h-7 w-7 place-items-center rounded-full bg-emerald-600 text-white text-[11px] font-semibold">
+                {identifiedName.split(/\s+/).filter(Boolean).slice(0, 2).map((s) => s[0]?.toUpperCase()).join("") || "?"}
+              </span>
+              <div className="min-w-0">
+                <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-emerald-700">
+                  Reservando como
+                </p>
+                <p className="text-[14px] font-semibold text-ink-950 truncate">{identifiedName}</p>
+              </div>
             </div>
-            {rememberedName && (
-              <p className="mt-1 text-[11.5px] text-ink-500">
-                Te tenemos como{" "}
-                <span className="font-medium text-ink-700">{rememberedName}</span>
-              </p>
-            )}
-          </div>
+          ) : (
+            <div>
+              <label className="block text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1.5">
+                Tu email
+              </label>
+              <div className="relative">
+                <Mail className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-ink-400" />
+                <input
+                  type="email"
+                  inputMode="email"
+                  autoComplete="email"
+                  value={email}
+                  onChange={(e) => setEmail(e.target.value)}
+                  required
+                  placeholder="tu@email.com"
+                  className="h-11 w-full rounded-lg border border-ink-200 bg-white pl-9 pr-3 text-[14.5px] text-ink-950 placeholder:text-ink-400 hover:border-ink-300 focus:outline-none focus:border-ink-700 focus:ring-2 focus:ring-ink-100"
+                />
+              </div>
+              {rememberedName && (
+                <p className="mt-1 text-[11.5px] text-ink-500">
+                  Te tenemos como{" "}
+                  <span className="font-medium text-ink-700">{rememberedName}</span>
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-2">

@@ -7,6 +7,8 @@ export const runtime = "nodejs";
 const ERROR_MESSAGES: Record<string, string> = {
   EMAIL_NOT_FOUND:
     "Ese email no está dado de alta como cliente. Avisa al equipo del coworking.",
+  CLIENT_NOT_FOUND:
+    "Tu identidad ha caducado. Vuelve a entrar desde el QR de la sala.",
   ROOM_NOT_FOUND: "Esa sala ya no está disponible.",
   ROOM_DIFFERENT_COWORKING:
     "Esa sala no pertenece a tu coworking.",
@@ -26,12 +28,15 @@ export async function POST(request: Request) {
 
   const cookie = await getPortalCookie();
   const emailFromBody = String(body?.email ?? "").trim().toLowerCase();
+  // Si tenemos cookie con clientId (selector por nombre), priorizamos esa vía
+  // — funciona también para clientes sin email registrado.
+  const useClientId = !!cookie?.clientId && !emailFromBody;
   const email = (emailFromBody || cookie?.email || "").toLowerCase();
   const roomId = String(body?.room_id ?? "");
   const startAt = String(body?.start_at ?? "");
   const endAt = String(body?.end_at ?? "");
 
-  if (!email || !email.includes("@")) {
+  if (!useClientId && (!email || !email.includes("@"))) {
     return NextResponse.json({ error: "Falta el email." }, { status: 400 });
   }
   if (!roomId || !startAt || !endAt) {
@@ -39,14 +44,23 @@ export async function POST(request: Request) {
   }
 
   const supabase = await createClient();
-  const { data, error } = await supabase
-    .rpc("quick_book_room", {
-      p_email: email,
-      p_room_id: roomId,
-      p_start_at: startAt,
-      p_end_at: endAt,
-    })
-    .single();
+  const { data, error } = useClientId
+    ? await supabase
+        .rpc("quick_book_room_by_client_id", {
+          p_client_id: cookie!.clientId,
+          p_room_id: roomId,
+          p_start_at: startAt,
+          p_end_at: endAt,
+        })
+        .single()
+    : await supabase
+        .rpc("quick_book_room", {
+          p_email: email,
+          p_room_id: roomId,
+          p_start_at: startAt,
+          p_end_at: endAt,
+        })
+        .single();
 
   if (error) {
     // Postgres exception messages come through error.message
@@ -69,8 +83,8 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: msg }, { status });
   }
 
-  // Refresca cookie si nueva o si email cambió
-  if (!cookie || cookie.email !== email) {
+  // Refresca cookie si nueva o si email cambió (solo en flujo email)
+  if (!useClientId && (!cookie || cookie.email !== email)) {
     const { data: clientData } = await supabase
       .rpc("quick_get_client", { p_email: email })
       .single();
