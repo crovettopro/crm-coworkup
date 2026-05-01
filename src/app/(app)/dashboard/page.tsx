@@ -52,7 +52,7 @@ export default async function DashboardPage({
   const endOfMonth = new Date(monthYear, monthNum, 0).toISOString().slice(0, 10);
 
   const [
-    cwSummary, subsByPlanRows, monthPayments, openIncidents, todayPasses, objective, arrAgg, chartAgg, topAgg, renewalSubs,
+    cwSummary, subsByPlanRows, monthPayments, openIncidents, todayPasses, objective, arrAgg, chartAgg, topAgg, renewalSubs, overduePayments,
   ] = await Promise.all([
     // 1 query con MRR/coworkers/asientos/ocupación pre-calculados (MV)
     supabase.from("dashboard_cw_summary_mv").select("*").in("coworking_id", cwIds),
@@ -62,7 +62,7 @@ export default async function DashboardPage({
       .from("payments")
       .select("expected_amount, paid_amount, status, expected_payment_date, client_id, clients(name)")
       .in("coworking_id", cwIds)
-      .gte("month", start).lt("month", end),
+      .gte("expected_payment_date", start).lt("expected_payment_date", end),
     supabase
       .from("incidents")
       .select("id, title, priority, status, created_date")
@@ -87,10 +87,9 @@ export default async function DashboardPage({
       : Promise.resolve({ data: null }),
     supabase
       .from("payments")
-      .select("paid_amount")
+      .select("expected_amount")
       .in("coworking_id", cwIds)
-      .eq("status", "paid")
-      .gte("paid_at", arrStartISO).lt("paid_at", arrEndISO),
+      .gte("expected_payment_date", arrStartISO).lt("expected_payment_date", arrEndISO),
     supabase
       .from("monthly_sales_view")
       .select("month_key, total")
@@ -112,20 +111,26 @@ export default async function DashboardPage({
       .not("end_date", "is", null)
       .gte("end_date", graceCutoffISO)
       .lte("end_date", endOfMonth),
+    // Pendientes de cobro vencidos — todos los meses, no sólo el actual
+    supabase
+      .from("payments")
+      .select("expected_amount, paid_amount, status, expected_payment_date, client_id, clients(name)")
+      .in("coworking_id", cwIds)
+      .in("status", ["pending", "overdue", "partial"])
+      .lt("expected_payment_date", today)
+      .order("expected_payment_date", { ascending: true }),
   ]);
 
   // Agregados pre-calculados en la MV — sumamos por todos los coworkings visibles
   const summaryRows = ((cwSummary as any).data ?? []) as any[];
   const coworkers = summaryRows.reduce((a, r) => a + Number(r.coworkers ?? 0), 0);
   const occupiedSeats = summaryRows.reduce((a, r) => a + Number(r.occupied_seats ?? 0), 0);
-  const arrGross = ((arrAgg as any).data ?? []).reduce((a: number, p: any) => a + Number(p.paid_amount ?? 0), 0);
+  const arrGross = ((arrAgg as any).data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
 
-  const expectedGross = (monthPayments.data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
+  const salesGross = (monthPayments.data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
   const collectedGross = (monthPayments.data ?? []).filter((p: any) => p.status === "paid" || p.status === "partial")
     .reduce((a: number, p: any) => a + Number(p.paid_amount ?? 0), 0);
-  const overdue = (monthPayments.data ?? []).filter((p: any) =>
-    p.status === "overdue" || (p.status === "pending" && p.expected_payment_date && p.expected_payment_date < today)
-  );
+  const overdue = ((overduePayments as any).data ?? []) as any[];
   const overdueAmount = overdue.reduce((a: number, p: any) => a + (Number(p.expected_amount ?? 0) - Number(p.paid_amount ?? 0)), 0);
 
   // === Forecast de renovaciones ===
@@ -204,9 +209,9 @@ export default async function DashboardPage({
         />
         <Kpi
           icon={<Wallet className="h-3 w-3" />}
-          label="Cobrado este mes"
-          value={formatCurrency(collectedGross)}
-          hint={`de ${formatCurrency(expectedGross)} previstos`}
+          label="Ventas del mes"
+          value={formatCurrency(salesGross)}
+          hint={`${formatCurrency(collectedGross)} cobrados`}
         />
         <Kpi
           icon={<AlertTriangle className="h-3 w-3" />}
@@ -232,7 +237,7 @@ export default async function DashboardPage({
           monthLabel={label}
           initialTarget={(objective as any)?.data?.target_amount ?? null}
           collected={collectedGross}
-          expected={expectedGross}
+          expected={salesGross}
           canEdit={profile.role === "super_admin" || profile.role === "manager"}
           forecastAmount={forecastAmount}
           forecastCount={forecastCount}
