@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Image from "next/image";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
 import { Search, Loader2, ArrowLeft } from "lucide-react";
 
 type Client = { id: string; name: string };
@@ -28,7 +27,6 @@ export function SelectClientFlow({
   clients: Client[];
   nextUrl: string;
 }) {
-  const router = useRouter();
   const [q, setQ] = useState("");
   const [pickingId, setPickingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -48,6 +46,7 @@ export function SelectClientFlow({
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ clientId: c.id, coworkingId }),
+        credentials: "same-origin",
       });
       const data = await res.json();
       if (!res.ok) {
@@ -55,8 +54,9 @@ export function SelectClientFlow({
         setPickingId(null);
         return;
       }
-      router.push(nextUrl);
-      router.refresh();
+      // Hard navigation: garantiza que la nueva cookie viaja en la siguiente
+      // request a /portal/book (router.push tenía race condition).
+      window.location.href = nextUrl;
     } catch {
       setError("Error de conexión. Reintenta.");
       setPickingId(null);
