@@ -426,15 +426,12 @@ export default async function ClientDetailPage({
               ) : (
                 <ul className="divide-y divide-ink-200">
                   {extras.map((e: any) => (
-                    <li key={e.id} className="flex items-center justify-between py-2.5">
-                      <div>
-                        <p className="text-[13px] font-medium text-ink-950">
-                          {EXTRA_TYPE_LABEL[e.extras?.type as keyof typeof EXTRA_TYPE_LABEL]}{" "}
-                          · <span className="font-mono text-ink-700">{e.extras?.identifier}</span>
-                        </p>
-                        <p className="text-[11px] text-ink-500">desde {formatDate(e.start_date)}</p>
-                      </div>
-                      <span className="text-[13px] font-medium text-ink-950 tabular">{formatCurrency(e.price)}</span>
+                    <li key={e.id} className="py-2.5">
+                      <p className="text-[13px] font-medium text-ink-950">
+                        {EXTRA_TYPE_LABEL[e.extras?.type as keyof typeof EXTRA_TYPE_LABEL]}{" "}
+                        · <span className="font-mono text-ink-700">{e.extras?.identifier}</span>
+                      </p>
+                      <p className="text-[11px] text-ink-500">desde {formatDate(e.start_date)}</p>
                     </li>
                   ))}
                 </ul>
