@@ -18,37 +18,20 @@ export default async function PortalSelectPage({
 
   const supabase = await createClient();
 
-  const { data: cw } = await supabase
-    .from("coworkings")
-    .select("id, name")
-    .eq("id", coworkingId)
-    .maybeSingle();
-
+  // Las tablas tienen RLS y el portal corre sin auth Supabase — usamos RPCs
+  // SECURITY DEFINER que solo exponen lo mínimo (id+name).
+  const { data: coworkings } = await supabase.rpc("portal_list_coworkings");
+  const cw = (coworkings ?? []).find((c: any) => c.id === coworkingId);
   if (!cw) redirect("/portal");
 
-  // Clientes con sub vigente o en gracia 7d en este coworking. La excepción
-  // OV+otra ya queda cubierta porque OV cuenta como sub vigente.
-  const graceCutoff = new Date();
-  graceCutoff.setDate(graceCutoff.getDate() - 7);
-  const graceISO = graceCutoff.toISOString().slice(0, 10);
-
-  const { data: subs } = await supabase
-    .from("subscriptions")
-    .select("client_id, end_date, plan_name, clients!inner(id, name, coworking_id)")
-    .eq("status", "active")
-    .or(`end_date.is.null,end_date.gte.${graceISO}`)
-    .eq("clients.coworking_id", coworkingId);
-
-  // Dedup por client_id (un cliente puede tener OV + otra → sale dos veces)
-  const seen = new Set<string>();
-  const clients: { id: string; name: string }[] = [];
-  for (const s of (subs ?? []) as any[]) {
-    const c = s.clients;
-    if (!c || seen.has(c.id)) continue;
-    seen.add(c.id);
-    clients.push({ id: c.id, name: c.name });
-  }
-  clients.sort((a, b) => a.name.localeCompare(b.name, "es"));
+  const { data: clientsRpc } = await supabase.rpc(
+    "portal_clients_with_active_sub",
+    { p_coworking_id: coworkingId },
+  );
+  const clients = ((clientsRpc ?? []) as any[]).map((c) => ({
+    id: c.id,
+    name: c.name,
+  }));
 
   const nextUrl = params.next ?? `/portal/book?coworking=${coworkingId}${params.room ? `&room=${params.room}` : ""}`;
 
