@@ -16,6 +16,7 @@ out
 # Data import (contiene datos reales de clientes — privado)
 import_data/*.csv
 import_data/*.sql
+import_data/csv_v2/
 
 # IDE
 .vscode
