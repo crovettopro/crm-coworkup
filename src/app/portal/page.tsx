@@ -35,12 +35,11 @@ export default async function PortalHomePage({
   // -----------------------------------------------------------------
   // Sin cookie → selector de coworking. Es el "front door" si alguien
   // llega al portal sin haber escaneado el QR de una sala concreta.
+  // RPC pública (SECURITY DEFINER) — la tabla coworkings tiene RLS y
+  // el portal corre sin auth Supabase.
   // -----------------------------------------------------------------
   if (!identity) {
-    const { data: coworkings } = await supabase
-      .from("coworkings")
-      .select("id, name")
-      .order("name");
+    const { data: coworkings } = await supabase.rpc("portal_list_coworkings");
 
     return (
       <div className="space-y-6">

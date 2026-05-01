@@ -23,58 +23,46 @@ export async function POST(request: Request) {
 
   const supabase = await createClient();
 
-  const { data: client } = await supabase
-    .from("clients")
-    .select("id, name, email, coworking_id, status")
-    .eq("id", clientId)
-    .eq("coworking_id", coworkingId)
-    .maybeSingle();
-
-  if (!client) {
-    return NextResponse.json(
-      { error: "Cliente no encontrado para este coworking" },
-      { status: 404 },
-    );
-  }
-
-  // Sub vigente o en gracia 7d (mismo criterio que dashboard / occupancy)
-  const { data: subs } = await supabase
-    .from("subscriptions")
-    .select("id, end_date")
-    .eq("client_id", clientId)
-    .eq("status", "active");
-
-  const today = new Date().toISOString().slice(0, 10);
-  const graceCutoff = new Date();
-  graceCutoff.setDate(graceCutoff.getDate() - 7);
-  const graceISO = graceCutoff.toISOString().slice(0, 10);
-  const hasValid = (subs ?? []).some(
-    (s) => !s.end_date || s.end_date >= graceISO,
-  );
-
-  if (!hasValid) {
-    return NextResponse.json(
-      {
-        error:
-          "Tu suscripción no está activa. Acércate a recepción para renovar antes de reservar.",
-      },
-      { status: 403 },
-    );
-  }
-
-  const { data: cw } = await supabase
-    .from("coworkings")
-    .select("name")
-    .eq("id", coworkingId)
+  // Validación + datos del cliente vía RPC SECURITY DEFINER (las tablas
+  // tienen RLS y el portal corre sin auth Supabase).
+  const { data, error } = await supabase
+    .rpc("portal_validate_client", {
+      p_client_id: clientId,
+      p_coworking_id: coworkingId,
+    })
     .single();
 
+  if (error) {
+    const code = (error.message || "").trim();
+    if (code === "CLIENT_NOT_FOUND") {
+      return NextResponse.json(
+        { error: "Cliente no encontrado para este coworking" },
+        { status: 404 },
+      );
+    }
+    if (code === "NO_ACTIVE_SUB") {
+      return NextResponse.json(
+        {
+          error:
+            "Tu suscripción no está activa. Acércate a recepción para renovar antes de reservar.",
+        },
+        { status: 403 },
+      );
+    }
+    return NextResponse.json(
+      { error: error.message || "No se pudo validar el cliente." },
+      { status: 400 },
+    );
+  }
+
+  const row = data as any;
   await setPortalCookie({
-    email: client.email ?? "",
-    clientId: client.id,
-    name: client.name,
-    coworkingId: client.coworking_id,
-    coworkingName: cw?.name ?? "",
+    email: row.client_email ?? "",
+    clientId: row.client_id,
+    name: row.client_name,
+    coworkingId,
+    coworkingName: row.coworking_name ?? "",
   });
 
-  return NextResponse.json({ ok: true, name: client.name });
+  return NextResponse.json({ ok: true, name: row.client_name });
 }
