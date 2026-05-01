@@ -300,7 +300,6 @@ export default async function InvoicesPage({
               <TR>
                 <TH>Nº</TH>
                 <TH>Cliente</TH>
-                <TH>Mes</TH>
                 <TH className="text-right">Total</TH>
                 <TH>Estado</TH>
                 <TH>Emisión</TH>
@@ -319,7 +318,6 @@ export default async function InvoicesPage({
                       </Link>
                     </div>
                   </TD>
-                  <TD className="text-[12.5px] text-ink-500">{formatDate(i.month)}</TD>
                   <TD className="text-right tabular text-[13px] font-medium text-ink-950">{formatCurrency(i.total_amount)}</TD>
                   <TD>
                     <Badge tone={i.status === "to_issue" ? "warning" : "success"}>
