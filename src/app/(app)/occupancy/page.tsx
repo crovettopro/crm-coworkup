@@ -44,7 +44,7 @@ export default async function OccupancyPage({
   const totalOffices = coworkings.filter((c) => cwIds.includes(c.id)).reduce((a, c) => a + (c.offices_capacity ?? 0), 0);
   // Coworkers = personas físicas con sub vigente o en gracia (excluye Oficina Virtual). Suma quantity.
   const coworkers = (summaryRows ?? []).reduce((a: number, r: any) => a + Number(r.coworkers ?? 0), 0);
-  // Plazas ocupadas ponderadas (Fijo=1, Oficina=1, Flexible=0.8, 20h=0.6, 10h=0.1, Tardes/OV=0)
+  // Plazas ocupadas ponderadas (Fijo=1, Oficina=1, Flexible=0.8, 20h=0.6, 10h=0.1, Tardes Ilimitadas/OV=0)
   const occupiedSeats = (summaryRows ?? []).reduce((a: number, r: any) => a + Number(r.occupied_seats ?? 0), 0);
   const lockersUsed = (rentedExtras ?? []).filter((e: any) => e.extras?.type === "locker").length;
   const screensUsed = (rentedExtras ?? []).filter((e: any) => e.extras?.type === "screen").length;
