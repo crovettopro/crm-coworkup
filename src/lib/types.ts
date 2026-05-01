@@ -253,7 +253,7 @@ export const PLAN_TYPE_LABEL: Record<PlanType, string> = {
   flexible: "Flexible",
   hours_20: "20h semanales",
   hours_10: "10h semanales",
-  evening: "Tardes",
+  evening: "Tardes Ilimitadas",
   office: "Oficina",
   company_custom: "Empresa personalizado",
   day_pass: "Pase de día",

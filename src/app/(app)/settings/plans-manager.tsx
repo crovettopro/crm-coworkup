@@ -111,7 +111,7 @@ export function PlansManager({
                 <option value="flexible">Flexible</option>
                 <option value="hours_20">20 horas</option>
                 <option value="hours_10">10 horas</option>
-                <option value="evening">Tardes</option>
+                <option value="evening">Tardes Ilimitadas</option>
                 <option value="office">Oficina</option>
                 <option value="company_custom">Empresa personalizado</option>
                 <option value="day_pass">Pase de día</option>
