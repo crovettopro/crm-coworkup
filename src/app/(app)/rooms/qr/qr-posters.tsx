@@ -40,7 +40,8 @@ export function QrPosters({
   const cwList = Array.from(groups.values());
 
   function urlForCw(cwId: string) {
-    return `${baseUrl}/portal/book?coworking=${cwId}`;
+    // Lleva directo al selector — el cliente tappea su nombre y reserva.
+    return `${baseUrl}/portal/select?coworking=${cwId}`;
   }
 
   return (
@@ -58,8 +59,8 @@ export function QrPosters({
             QR para imprimir y pegar
           </h1>
           <p className="text-[12px] text-ink-500">
-            Un QR por coworking. Al escanear, el cliente ve las salas
-            disponibles y reserva al momento sólo con su email.
+            Un QR por coworking. Al escanear, el cliente selecciona su nombre
+            y reserva la sala al momento — sin email ni contraseña.
           </p>
         </div>
         <button
@@ -208,7 +209,7 @@ function Poster({
           Reserva una sala en segundos
         </p>
         <p className="mt-1 text-[13px] text-ink-500">
-          Sólo necesitas tu email de cliente.
+          Selecciona tu nombre y elige hueco — listo.
         </p>
       </div>
 

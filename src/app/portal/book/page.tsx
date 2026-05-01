@@ -43,6 +43,14 @@ export default async function PortalBookPage({
   if (!coworkingId) {
     redirect("/portal/login?next=/portal/book");
   }
+  // Si llegan por QR (coworking en URL) sin cookie, mandamos al selector
+  // de cliente — más rápido que pedir email y funciona aunque no tengan email.
+  if (!cookie) {
+    const sp = new URLSearchParams({ coworking: coworkingId });
+    if (initialRoomId) sp.set("room", initialRoomId);
+    sp.set("next", `/portal/book?${sp.toString()}`);
+    redirect(`/portal/select?${sp.toString()}`);
+  }
 
   const { data: rooms } = await supabase.rpc("rooms_for_coworking", {
     p_coworking_id: coworkingId,
