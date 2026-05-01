@@ -9,6 +9,7 @@ import { Avatar } from "@/components/ui/avatar";
 import { KpiGrid, Kpi } from "@/components/ui/kpi";
 import { Table, THead, TBody, TR, TH, TD } from "@/components/ui/table";
 import { ClientEditPanel } from "./edit-panel";
+import { ClientNotesPanel } from "./notes-panel";
 import { ScheduleBajaPanel } from "./schedule-baja-panel";
 import { ContractSubscriptionDialog } from "@/components/contract-subscription-dialog";
 import { EditSubscriptionButton } from "@/components/edit-subscription-dialog";
@@ -411,6 +412,7 @@ export default async function ClientDetailPage({
         </div>
 
         <div className="space-y-4">
+          <ClientNotesPanel clientId={client.id} initialNotes={client.notes ?? null} />
           <ScheduleBajaPanel client={client} canRevert={profile.role === "super_admin" || profile.role === "manager"} />
           <ClientEditPanel client={client} coworkings={coworkings} />
 
