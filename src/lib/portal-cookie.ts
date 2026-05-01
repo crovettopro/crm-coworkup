@@ -84,7 +84,9 @@ export async function getPortalCookie(): Promise<PortalIdentity | null> {
   try {
     const json = Buffer.from(encoded, "base64url").toString("utf8");
     const data = JSON.parse(json) as PortalIdentity;
-    if (!data.email || !data.clientId) return null;
+    // clientId es lo único requerido — email puede ser "" para clientes
+    // identificados vía /portal/select (sin email registrado en BBDD).
+    if (!data.clientId) return null;
     return data;
   } catch {
     return null;
