@@ -89,7 +89,8 @@ export default async function DashboardPage({
       .from("payments")
       .select("expected_amount")
       .in("coworking_id", cwIds)
-      .gte("expected_payment_date", arrStartISO).lt("expected_payment_date", arrEndISO),
+      .gte("expected_payment_date", arrStartISO).lt("expected_payment_date", arrEndISO)
+      .in("status", ["paid", "partial"]),
     supabase
       .from("monthly_sales_view")
       .select("month_key, total")
@@ -127,7 +128,11 @@ export default async function DashboardPage({
   const occupiedSeats = summaryRows.reduce((a, r) => a + Number(r.occupied_seats ?? 0), 0);
   const arrGross = ((arrAgg as any).data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
 
-  const salesGross = (monthPayments.data ?? []).reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
+  // "Ventas del mes" = solo las ejecutadas (paid o partial). Los pendientes/overdue
+  // de este mes aparecen en su propia card (Pendientes de cobro), no inflan ventas.
+  const salesGross = (monthPayments.data ?? [])
+    .filter((p: any) => p.status === "paid" || p.status === "partial")
+    .reduce((a: number, p: any) => a + Number(p.expected_amount ?? 0), 0);
   const collectedGross = (monthPayments.data ?? []).filter((p: any) => p.status === "paid" || p.status === "partial")
     .reduce((a: number, p: any) => a + Number(p.paid_amount ?? 0), 0);
   const overdue = ((overduePayments as any).data ?? []) as any[];
