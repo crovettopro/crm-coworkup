@@ -12,9 +12,8 @@ export default async function PortalSelectPage({
   const params = await searchParams;
   const coworkingId = params.coworking;
   if (!coworkingId) {
-    // Sin coworking en URL: el QR debería traerlo. Caemos al login por email
-    // como flujo alternativo.
-    redirect("/portal/login");
+    // Sin coworking → al picker de coworking
+    redirect("/portal");
   }
 
   const supabase = await createClient();
@@ -25,7 +24,7 @@ export default async function PortalSelectPage({
     .eq("id", coworkingId)
     .maybeSingle();
 
-  if (!cw) redirect("/portal/login");
+  if (!cw) redirect("/portal");
 
   // Clientes con sub vigente o en gracia 7d en este coworking. La excepción
   // OV+otra ya queda cubierta porque OV cuenta como sub vigente.

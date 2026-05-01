@@ -1,7 +1,8 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getPortalCookie } from "@/lib/portal-cookie";
-import { CalendarPlus, Clock, ArrowRight, LogIn } from "lucide-react";
+import { CalendarPlus, Clock, ArrowRight, Building2 } from "lucide-react";
 
 export const dynamic = "force-dynamic";
 
@@ -16,57 +17,65 @@ function fmtTime(d: Date) {
   return d.toLocaleTimeString("es-ES", { hour: "2-digit", minute: "2-digit" });
 }
 
-export default async function PortalHomePage() {
+export default async function PortalHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ coworking?: string }>;
+}) {
+  const params = await searchParams;
   const identity = await getPortalCookie();
   const supabase = await createClient();
 
+  // Si la URL trae coworking (alguien escaneando un QR llegó hasta aquí), saltamos
+  // directo al selector de cliente.
+  if (!identity && params.coworking) {
+    redirect(`/portal/select?coworking=${params.coworking}`);
+  }
+
   // -----------------------------------------------------------------
-  // Sin cookie: pantalla de bienvenida con CTA a identificarse y a
-  // reservar (la reserva pedirá el email al final del flujo).
+  // Sin cookie → selector de coworking. Es el "front door" si alguien
+  // llega al portal sin haber escaneado el QR de una sala concreta.
   // -----------------------------------------------------------------
   if (!identity) {
+    const { data: coworkings } = await supabase
+      .from("coworkings")
+      .select("id, name")
+      .order("name");
+
     return (
       <div className="space-y-6">
         <div>
-          <p className="text-[13px] text-ink-500">Bienvenido a Cowork Up</p>
-          <h1 className="text-[28px] font-semibold tracking-tight text-ink-950 leading-tight">
-            Reserva una sala de reuniones
+          <p className="text-[13px] text-ink-500">Cowork Up</p>
+          <h1 className="text-[26px] font-semibold tracking-tight text-ink-950 leading-tight">
+            ¿Dónde quieres reservar?
           </h1>
+          <p className="mt-1.5 text-[13px] text-ink-500">
+            Elige tu coworking y luego selecciona tu nombre.
+          </p>
         </div>
 
-        <div className="rounded-2xl bg-ink-950 text-white p-6 shadow-lg relative overflow-hidden">
-          <div className="pointer-events-none absolute -top-20 -right-20 w-[280px] h-[280px] rounded-full bg-brand-500/15 blur-3xl" />
-          <div className="relative">
-            <p className="text-[11.5px] uppercase tracking-[0.08em] text-brand-400 font-medium">
-              Sin contraseña
-            </p>
-            <h2 className="mt-1.5 text-[20px] font-semibold leading-tight">
-              Sólo necesitas el email con el que estás dado de alta como cliente
-            </h2>
-            <p className="mt-2 text-[13px] text-ink-300">
-              Te recordamos en este móvil 30 días. Cero fricción.
-            </p>
-            <div className="mt-5 flex flex-wrap gap-2">
-              <Link
-                href="/portal/login"
-                className="inline-flex items-center gap-2 rounded-lg bg-brand-500 px-4 h-11 text-[13.5px] font-semibold text-ink-950 hover:bg-brand-400 transition-colors"
-              >
-                <LogIn className="h-4 w-4" /> Identifícate
-              </Link>
-              <Link
-                href="/portal/bookings"
-                className="inline-flex items-center gap-2 rounded-lg border border-white/20 px-4 h-11 text-[13.5px] text-white hover:bg-white/10"
-              >
-                Mis reservas
-              </Link>
-            </div>
-          </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          {(coworkings ?? []).map((cw: any) => (
+            <Link
+              key={cw.id}
+              href={`/portal/select?coworking=${cw.id}`}
+              className="group flex items-center gap-3 rounded-2xl border border-ink-200 bg-white px-5 py-5 hover:border-ink-700 hover:shadow-md transition-all"
+            >
+              <span className="grid h-12 w-12 place-items-center rounded-xl bg-ink-950 text-white shrink-0">
+                <Building2 className="h-5 w-5" />
+              </span>
+              <div className="flex-1 min-w-0">
+                <p className="text-[10.5px] uppercase tracking-[0.08em] font-medium text-ink-500">
+                  Coworking
+                </p>
+                <p className="text-[16px] font-semibold text-ink-950 truncate">
+                  {cw.name}
+                </p>
+              </div>
+              <ArrowRight className="h-4 w-4 text-ink-400 group-hover:text-ink-900 group-hover:translate-x-0.5 transition-all" />
+            </Link>
+          ))}
         </div>
-
-        <p className="text-[12.5px] text-ink-500 text-center">
-          Si has escaneado el QR de una sala, también puedes pulsar abajo para ver
-          su disponibilidad y reservar al momento.
-        </p>
       </div>
     );
   }
