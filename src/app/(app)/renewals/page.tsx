@@ -131,7 +131,13 @@ export default async function RenewalsPage() {
           </CardHeader>
           <CardBody className="py-1.5">
             {expired.length === 0 ? (
-              <p className="py-8 text-center text-[13px] text-ink-500">Sin vencidas — todo al día</p>
+              <div className="py-8 text-center">
+                <p className="text-[13px] text-ink-700">Sin vencidas pendientes de renovar</p>
+                <p className="mt-1 text-[11.5px] text-ink-500">
+                  Aparecerán aquí cuando una sub caduque sin renovarse —
+                  el cliente sigue contando para ocupación durante esos 7 días.
+                </p>
+              </div>
             ) : (
               <ul>
                 {expired.map((s: any) => {
