@@ -180,11 +180,16 @@ export default async function DashboardPage({
   }));
 
   // Subs by plan (MV — ya agregada por coworking)
+  // Excluimos Oficina Mensual / Virtual (no son puestos físicos) y Monitor (es un alquiler
+  // de extra, no una suscripción) — para que el conteo case con /subscriptions.
+  const EXCLUDED_FROM_DASHBOARD_PLANS = new Set(["oficina mensual", "oficina virtual", "monitor"]);
   const byPlan = new Map<string, number>();
   for (const r of ((subsByPlanRows as any).data ?? []) as any[]) {
+    if (EXCLUDED_FROM_DASHBOARD_PLANS.has(String(r.plan_name).toLowerCase())) continue;
     byPlan.set(r.plan_name, (byPlan.get(r.plan_name) ?? 0) + Number(r.count ?? 0));
   }
   const subsByPlan = Array.from(byPlan.entries()).sort((a, b) => b[1] - a[1]);
+  const subsByPlanTotal = subsByPlan.reduce((a, [, n]) => a + n, 0);
   const todayPassesList = (todayPasses.data ?? []);
 
   const totalCapacity = coworkings.filter((c) => cwIds.includes(c.id)).reduce((a, c) => a + (c.total_capacity ?? 0), 0);
@@ -337,7 +342,14 @@ export default async function DashboardPage({
       <div className="grid grid-cols-1 gap-4 mb-4 lg:[grid-template-columns:2fr_1fr]">
         <Card>
           <CardHeader>
-            <CardTitle><ListChecks className="h-3.5 w-3.5 text-ink-400" /> Suscripciones activas por tipo</CardTitle>
+            <CardTitle>
+              <ListChecks className="h-3.5 w-3.5 text-ink-400" /> Suscripciones activas por tipo
+              {subsByPlanTotal > 0 && (
+                <span className="ml-2 text-[12px] font-normal text-ink-500">
+                  · {subsByPlanTotal} en total (sin Of. Mensual / Of. Virtual)
+                </span>
+              )}
+            </CardTitle>
             <Link href="/subscriptions" className="text-[12px] text-ink-500 hover:text-ink-900">Catálogo →</Link>
           </CardHeader>
           <CardBody>
