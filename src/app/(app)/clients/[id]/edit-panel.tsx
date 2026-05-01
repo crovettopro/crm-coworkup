@@ -66,12 +66,6 @@ export function ClientEditPanel({ client, coworkings }: { client: Client; cowork
             )}
           </div>
 
-          {client.notes && (
-            <div className="pt-2.5 border-t border-ink-200">
-              <p className="text-[10.5px] uppercase tracking-[0.06em] font-medium text-ink-500 mb-1">Notas</p>
-              <p className="text-[13px] text-ink-700 whitespace-pre-wrap">{client.notes}</p>
-            </div>
-          )}
         </CardBody>
       </Card>
     );
